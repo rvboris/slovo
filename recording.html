@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Слово — Запись</title>
+    <link rel="stylesheet" href="/src/recording.css" />
+  </head>
+  <body>
+    <main class="recording-indicator" role="status" aria-live="polite" aria-atomic="true">
+      <span class="recording-dot" aria-hidden="true"></span>
+      <span class="recording-label">Запись</span>
+      <time id="recording-time" datetime="PT0S">00:00</time>
+    </main>
+    <script type="module" src="/src/recording.ts"></script>
+  </body>
+</html>
