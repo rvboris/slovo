@@ -1,0 +1,6 @@
+# Slovo Wayland global hotkeys. SECURITY: grants the active graphical user
+# read access to complete keyboard event streams; every process of that user
+# can then read all keystrokes. Slovo filters locally to the configured chord.
+ACTION=="remove", GOTO="slovo_input_end"
+SUBSYSTEM=="input", KERNEL=="event[0-9]*", ENV{ID_INPUT_KEYBOARD}=="1", TAG+="uaccess"
+LABEL="slovo_input_end"

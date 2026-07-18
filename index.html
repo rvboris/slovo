@@ -38,11 +38,34 @@
               id="hotkey-control"
               class="hotkey-control"
               aria-labelledby="hotkey-label"
-              aria-describedby="hotkey-help"
+              aria-describedby="hotkey-help shortcut-status-text"
             >
               <span class="hotkey-value" id="hotkey-value">—</span>
               <span class="hotkey-hint" id="hotkey-help">Нажмите, чтобы изменить</span>
             </button>
+            <div
+              class="shortcut-status"
+              id="shortcut-status"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              data-state="idle"
+            >
+              <span class="shortcut-status-mark" id="shortcut-status-mark" aria-hidden="true"></span>
+              <span class="shortcut-status-text" id="shortcut-status-text">Готовим глобальное сочетание…</span>
+              <button
+                type="button"
+                id="shortcut-retry"
+                class="shortcut-retry"
+                hidden
+              >Повторить</button>
+              <button
+                type="button"
+                id="shortcut-setup"
+                class="shortcut-setup"
+                hidden
+              >Настроить доступ…</button>
+            </div>
           </div>
         </div>
 
@@ -104,21 +127,6 @@
             <p class="setting-help" id="trigger-help">Нажмите один раз для старта и ещё раз для остановки</p>
           </div>
         </div>
-
-        <div class="divider" role="separator"></div>
-
-        <!-- Временная диагностика окна индикатора; удалить после проверки Wayland. -->
-        <div class="setting-row stacked">
-          <div class="setting-copy">
-            <span class="setting-label">Проверка индикатора</span>
-          </div>
-          <div class="setting-control">
-            <button type="button" id="overlay-debug-toggle" class="hotkey-control">
-              Показать индикатор
-            </button>
-            <p class="setting-help">Временная проверка окна без запуска записи</p>
-          </div>
-        </div>
       </form>
 
       <div class="error-banner hidden" id="error-banner" role="alert" aria-live="assertive">
@@ -139,6 +147,134 @@
           <span class="save-label">Изменения сохраняются автоматически</span>
         </span>
       </footer>
+
+      <dialog
+        id="permission-dialog"
+        class="permission-dialog"
+        hidden
+        aria-labelledby="permission-dialog-title"
+        aria-describedby="permission-dialog-intro"
+      >
+        <div class="permission-dialog-body">
+          <div class="permission-dialog-head">
+            <h2 id="permission-dialog-title" class="permission-dialog-title">
+              Доступ к клавиатуре
+            </h2>
+            <button
+              type="button"
+              id="permission-dialog-close"
+              class="permission-dialog-close"
+              aria-label="Закрыть окно доступа к клавиатуре"
+            >✕</button>
+          </div>
+
+          <p id="permission-dialog-intro" class="permission-dialog-intro">
+            В Wayland нет обычного способа дать приложению глобальное сочетание клавиш.
+            Поэтому для работы сочетания Слово нужен доступ текущего пользователя к
+            потоку событий от клавиатуры.
+          </p>
+
+          <ul class="permission-dialog-notes">
+            <li>
+              Доступ получает <strong>весь сеанс пользователя</strong>, а не только Слово.
+              Любая программа, запущенная от вашего имени, сможет читать все нажатия клавиш.
+            </li>
+            <li>
+              Сам помощник Слово фильтрует события локально и передаёт наружу только
+              нажатия и отпускания назначенного сочетания. Но это не защищает от других
+              программ того же пользователя.
+            </li>
+            <li>
+              Команды ниже выполняются только вами — никаких скрытых повышений прав.
+              Скопируйте их в терминал и запустите самостоятельно.
+            </li>
+          </ul>
+
+          <div
+            class="permission-dialog-state"
+            id="permission-dialog-state"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            hidden
+          ></div>
+
+          <div
+            class="permission-dialog-loading"
+            id="permission-dialog-loading"
+            role="status"
+            aria-live="polite"
+            hidden
+          >
+            <span class="permission-dialog-spinner" aria-hidden="true"></span>
+            <span>Загружаем инструкции…</span>
+          </div>
+
+          <div
+            class="permission-dialog-content"
+            id="permission-dialog-content"
+            hidden
+          >
+            <p
+              class="permission-setup-error"
+              id="permission-setup-error"
+              role="alert"
+              aria-live="assertive"
+              hidden
+            ></p>
+
+            <p class="permission-dialog-install-status" id="permission-install-status"></p>
+
+            <div class="permission-dialog-ack" id="permission-ack-block">
+              <label class="permission-ack-label">
+                <input type="checkbox" id="permission-ack" class="permission-ack-input" />
+                <span>Я понимаю, что доступ получат все процессы моего пользователя.</span>
+              </label>
+            </div>
+
+            <section class="permission-section" id="permission-install-section">
+              <div class="permission-section-head">
+                <h3 class="permission-section-title">Команды для включения</h3>
+                <button
+                  type="button"
+                  class="permission-copy-button"
+                  id="permission-copy-install"
+                  data-copy-kind="install"
+                  disabled
+                >Копировать</button>
+              </div>
+              <p class="permission-section-help">
+                Запустите эти команды в терминале от своего пользователя, затем
+                вернитесь и нажмите «Проверить снова».
+              </p>
+              <pre class="permission-code" id="permission-install-code" tabindex="0"><code></code></pre>
+            </section>
+
+            <section class="permission-section permission-revoke-section">
+              <div class="permission-section-head">
+                <h3 class="permission-section-title">Команды для отключения</h3>
+                <button
+                  type="button"
+                  class="permission-copy-button"
+                  id="permission-copy-revoke"
+                  data-copy-kind="revoke"
+                >Копировать</button>
+              </div>
+              <p class="permission-section-help" id="permission-revoke-note"></p>
+              <pre class="permission-code" id="permission-revoke-code" tabindex="0"><code></code></pre>
+            </section>
+          </div>
+        </div>
+
+        <div class="permission-dialog-actions">
+          <button type="button" id="permission-verify" class="permission-verify-button">
+            Проверить снова
+          </button>
+          <button type="button" id="permission-cancel" class="permission-cancel-button">
+            Закрыть
+          </button>
+        </div>
+      </dialog>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>

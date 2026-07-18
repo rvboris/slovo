@@ -1,0 +1,228 @@
+pub mod chord;
+#[cfg(target_os = "linux")]
+pub mod helper;
+pub mod matcher;
+mod native;
+pub mod protocol;
+#[cfg(target_os = "linux")]
+mod wayland;
+
+pub use chord::{ShortcutChord, ShortcutError, ShortcutKey, ShortcutModifier};
+pub use matcher::{
+    ChordSpec, DeviceId, InputCode, InputValue, MatchEvent, MatchState, Matcher, Modifiers,
+};
+pub use native::NativeShortcutBackend;
+pub use protocol::{
+    decode_helper_line, decode_parent_line, encode_helper_line, encode_parent_line, EventState,
+    HelperMessage, ParentCommand, ProtocolError, MAX_LINE_BYTES, PROTOCOL_VERSION,
+};
+
+/// Shortcut implementation selected by the runtime environment.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum BackendKind {
+    Native,
+    WaylandHelper,
+    LegacyPortal,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(tag = "state", rename_all = "kebab-case")]
+pub enum ShortcutBackendStatus {
+    Starting {
+        backend: BackendKind,
+    },
+    Active {
+        backend: BackendKind,
+        shortcut: String,
+        #[serde(rename = "deviceCount", skip_serializing_if = "Option::is_none")]
+        device_count: Option<usize>,
+    },
+    PermissionDenied {
+        detail: String,
+        #[serde(rename = "setupAvailable")]
+        setup_available: bool,
+    },
+    DevicesUnavailable {
+        detail: String,
+    },
+    Restarting {
+        backend: BackendKind,
+    },
+    Failed {
+        backend: BackendKind,
+        detail: String,
+    },
+    ShuttingDown,
+}
+
+impl ShortcutBackendStatus {
+    pub const fn backend(&self) -> BackendKind {
+        match self {
+            Self::Starting { backend }
+            | Self::Active { backend, .. }
+            | Self::Restarting { backend }
+            | Self::Failed { backend, .. } => *backend,
+            Self::PermissionDenied { .. } | Self::DevicesUnavailable { .. } => {
+                BackendKind::WaylandHelper
+            }
+            Self::ShuttingDown => BackendKind::WaylandHelper,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LinuxSession {
+    Wayland,
+    X11,
+    Unknown,
+}
+
+pub fn detect_linux_session(
+    xdg_session_type: Option<&str>,
+    wayland_display: Option<&str>,
+    display: Option<&str>,
+) -> LinuxSession {
+    match xdg_session_type
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("wayland") => LinuxSession::Wayland,
+        Some("x11") => LinuxSession::X11,
+        _ if wayland_display.is_some_and(|value| !value.is_empty()) => LinuxSession::Wayland,
+        _ if display.is_some_and(|value| !value.is_empty()) => LinuxSession::X11,
+        _ => LinuxSession::Unknown,
+    }
+}
+
+pub enum ShortcutManager {
+    Native(NativeShortcutBackend),
+    #[cfg(target_os = "linux")]
+    Wayland(wayland::WaylandSupervisor),
+    LegacyPortal,
+}
+
+impl ShortcutManager {
+    pub fn native() -> Self {
+        Self::Native(NativeShortcutBackend::new())
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn wayland(app: tauri::AppHandle) -> Result<Self, ShortcutError> {
+        wayland::WaylandSupervisor::spawn(app).map(Self::Wayland)
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub fn wayland(_app: tauri::AppHandle) -> Result<Self, ShortcutError> {
+        Err(ShortcutError::Backend(
+            "Wayland helper is supported only on Linux".to_owned(),
+        ))
+    }
+
+    pub const fn legacy_portal() -> Self {
+        Self::LegacyPortal
+    }
+
+    pub const fn kind(&self) -> BackendKind {
+        match self {
+            Self::Native(_) => BackendKind::Native,
+            #[cfg(target_os = "linux")]
+            Self::Wayland(_) => BackendKind::WaylandHelper,
+            Self::LegacyPortal => BackendKind::LegacyPortal,
+        }
+    }
+
+    pub fn active_chord(&self) -> Option<&ShortcutChord> {
+        match self {
+            Self::Native(backend) => backend.active_chord(),
+            #[cfg(target_os = "linux")]
+            Self::Wayland(backend) => backend.active_chord(),
+            Self::LegacyPortal => None,
+        }
+    }
+
+    pub fn status(&self) -> ShortcutBackendStatus {
+        match self {
+            Self::Native(backend) => backend.active_chord().map_or(
+                ShortcutBackendStatus::Starting {
+                    backend: BackendKind::Native,
+                },
+                |chord| ShortcutBackendStatus::Active {
+                    backend: BackendKind::Native,
+                    shortcut: chord.to_string(),
+                    device_count: None,
+                },
+            ),
+            #[cfg(target_os = "linux")]
+            Self::Wayland(backend) => backend.status(),
+            Self::LegacyPortal => ShortcutBackendStatus::Active {
+                backend: BackendKind::LegacyPortal,
+                shortcut: String::new(),
+                device_count: None,
+            },
+        }
+    }
+
+    pub fn replace(
+        &mut self,
+        app: &tauri::AppHandle,
+        chord: ShortcutChord,
+    ) -> Result<(), ShortcutError> {
+        match self {
+            Self::Native(backend) => backend.register(app, chord),
+            #[cfg(target_os = "linux")]
+            Self::Wayland(backend) => backend.replace(chord),
+            Self::LegacyPortal => Ok(()),
+        }
+    }
+
+    pub fn retry(&mut self, _app: &tauri::AppHandle) -> Result<(), ShortcutError> {
+        match self {
+            Self::Native(_) => Ok(()),
+            #[cfg(target_os = "linux")]
+            Self::Wayland(backend) => backend.retry(),
+            Self::LegacyPortal => Err(ShortcutError::Backend(
+                "retry is unavailable for the legacy portal backend".to_owned(),
+            )),
+        }
+    }
+
+    pub fn shutdown(&mut self, app: &tauri::AppHandle) -> Result<(), ShortcutError> {
+        match self {
+            Self::Native(backend) => backend.shutdown(app),
+            #[cfg(target_os = "linux")]
+            Self::Wayland(backend) => backend.shutdown(),
+            Self::LegacyPortal => Ok(()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_detection_prefers_xdg_and_uses_display_fallbacks() {
+        assert_eq!(
+            detect_linux_session(Some("wayland"), None, Some(":0")),
+            LinuxSession::Wayland
+        );
+        assert_eq!(
+            detect_linux_session(Some("x11"), Some("wayland-0"), None),
+            LinuxSession::X11
+        );
+        assert_eq!(
+            detect_linux_session(None, Some("wayland-0"), Some(":0")),
+            LinuxSession::Wayland
+        );
+        assert_eq!(
+            detect_linux_session(None, None, Some(":0")),
+            LinuxSession::X11
+        );
+        assert_eq!(
+            detect_linux_session(None, None, None),
+            LinuxSession::Unknown
+        );
+    }
+}

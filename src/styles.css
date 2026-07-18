@@ -363,6 +363,475 @@ body {
   color: var(--accent);
 }
 
+/* ── Shortcut backend status ───────────────── */
+
+.shortcut-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 1px 0 0;
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+  transition: color var(--transition);
+}
+
+.shortcut-status-mark {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--status-ready);
+  transition: background var(--transition);
+}
+
+.shortcut-status[data-state="preparing"] {
+  color: var(--text-muted);
+}
+.shortcut-status[data-state="preparing"] .shortcut-status-mark {
+  background: var(--status-ready);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.shortcut-status[data-state="active"] {
+  color: var(--status-active);
+}
+.shortcut-status[data-state="active"] .shortcut-status-mark {
+  background: var(--status-active);
+}
+
+.shortcut-status[data-state="warning"] {
+  color: var(--text);
+}
+.shortcut-status[data-state="warning"] .shortcut-status-mark {
+  background: var(--status-rec);
+}
+
+.shortcut-status[data-state="error"] {
+  color: var(--danger);
+}
+.shortcut-status[data-state="error"] .shortcut-status-mark {
+  background: var(--danger);
+}
+
+.shortcut-status[data-state="neutral"] .shortcut-status-mark {
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+
+.shortcut-status-text {
+  min-width: 0;
+}
+
+.shortcut-retry {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.shortcut-retry:hover:not(:disabled) {
+  background: var(--surface-inset);
+  border-color: var(--text-muted);
+}
+
+.shortcut-retry:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.shortcut-retry:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.shortcut-setup {
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.shortcut-setup:hover {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.shortcut-setup:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+/* Keep the HTML hidden contract authoritative over component display rules. */
+[hidden] {
+  display: none !important;
+}
+
+/* ── Permission dialog ──────────────────────── */
+
+.permission-dialog:not([open]) {
+  display: none;
+}
+
+.permission-dialog {
+  width: min(560px, calc(100vw - var(--space-7)));
+  max-height: calc(100dvh - var(--space-7));
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.permission-dialog::backdrop {
+  background: rgba(8, 14, 22, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.permission-dialog-body {
+  padding: var(--space-4) var(--space-5) var(--space-3);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.permission-dialog-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.permission-dialog-title {
+  margin: 0;
+  font-size: var(--font-lg);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.permission-dialog-close {
+  flex-shrink: 0;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: var(--font-md);
+  line-height: 1;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.permission-dialog-close:hover {
+  background: var(--surface-inset);
+  color: var(--text);
+}
+
+.permission-dialog-close:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.permission-dialog-intro {
+  margin: 0;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.permission-dialog-notes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.permission-dialog-notes li {
+  position: relative;
+  padding-left: var(--space-5);
+  font-size: var(--font-xs);
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.permission-dialog-notes li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--status-rec);
+  flex-shrink: 0;
+}
+
+.permission-dialog-notes strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.permission-dialog-state {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--text);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.permission-dialog-loading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+
+.permission-dialog-spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: pulse 1s ease-in-out infinite;
+}
+
+.permission-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.permission-dialog-install-status {
+  margin: 0;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.permission-setup-error {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--font-sm);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--danger);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+}
+
+.permission-dialog-ack {
+  padding: var(--space-2) var(--space-3);
+  background: var(--danger-bg);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-sm);
+}
+
+.permission-ack-label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.permission-ack-input {
+  flex-shrink: 0;
+  margin-top: 1px;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.permission-ack-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.permission-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.permission-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.permission-section-title {
+  margin: 0;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.permission-section-help {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.permission-code {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--surface-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.permission-code code {
+  font-family: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono",
+    "Fira Code", Consolas, monospace;
+  font-size: var(--font-sm);
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre;
+}
+
+.permission-code:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.permission-copy-button {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition),
+    border-color var(--transition);
+}
+
+.permission-copy-button:hover:not(:disabled) {
+  background: var(--surface-inset);
+  border-color: var(--text-muted);
+}
+
+.permission-copy-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.permission-copy-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.permission-dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.permission-verify-button {
+  padding: 7px 16px;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+  color: var(--accent-fg);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.permission-verify-button:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.permission-verify-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.permission-verify-button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.permission-cancel-button {
+  padding: 7px 16px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.permission-cancel-button:hover {
+  background: var(--surface-inset);
+  border-color: var(--text-muted);
+}
+
+.permission-cancel-button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .permission-dialog-spinner {
+    animation-duration: 0.01ms !important;
+  }
+}
+
 /* ── Text input ────────────────────────────── */
 
 .text-input {

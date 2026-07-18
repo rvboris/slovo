@@ -4,6 +4,12 @@ version = "0.1.0"
 description = "Linux-first push-to-talk transcription"
 authors = ["Slovo contributors"]
 edition = "2021"
+# This crate has two bin targets (the app `homeborismygitslovo` and the
+# `slovo-input-helper` sidecar). Without `default-run`, `cargo run` cannot
+# decide which to launch and fails with "could not determine which binary to
+# run". Tauri's dev/build commands invoke `cargo run`/`cargo build` without a
+# `--bin` selector, so we must declare the app as the default.
+default-run = "homeborismygitslovo"
 
 [lib]
 name = "homeborismygitslovo_lib"
@@ -11,6 +17,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+
+[[bin]]
+name = "slovo-input-helper"
+path = "src/bin/slovo-input-helper.rs"
 
 [dependencies]
 arboard = "3"
@@ -28,3 +38,9 @@ url = "2"
 zbus = { version = "5", default-features = false, features = ["tokio"] }
 async-trait = "0.1"
 futures-util = "0.3"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { version = "0.13.2", default-features = false }
+udev = { version = "0.9.3", default-features = false }
+polling = "3.11.0"
+libc = "0.2"
