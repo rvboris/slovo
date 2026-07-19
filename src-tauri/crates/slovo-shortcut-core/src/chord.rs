@@ -1,8 +1,6 @@
 use std::fmt;
 use std::str::FromStr;
 
-use tauri_plugin_global_shortcut::Shortcut;
-
 /// Modifier keys in the canonical ordering used by the frontend and storage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ShortcutModifier {
@@ -160,13 +158,6 @@ impl ShortcutChord {
 
     pub fn key(&self) -> &ShortcutKey {
         &self.key
-    }
-
-    /// Converts through the plugin parser to retain its platform-specific behavior.
-    pub fn to_tauri_shortcut(&self) -> Result<Shortcut, ShortcutError> {
-        self.to_string()
-            .parse::<Shortcut>()
-            .map_err(|error| ShortcutError::Tauri(error.to_string()))
     }
 }
 
@@ -365,20 +356,6 @@ mod tests {
                 invalid.parse::<ShortcutChord>().is_err(),
                 "accepted {invalid:?}"
             );
-        }
-    }
-
-    #[test]
-    fn converts_with_the_tauri_parser() {
-        for input in [
-            "Control+Shift+Space",
-            "Alt+KeyA",
-            "Super+F24",
-            "Ctrl+Backquote",
-        ] {
-            let chord = input.parse::<ShortcutChord>().unwrap();
-            let expected = chord.to_string().parse::<Shortcut>().unwrap();
-            assert_eq!(chord.to_tauri_shortcut().unwrap(), expected);
         }
     }
 }

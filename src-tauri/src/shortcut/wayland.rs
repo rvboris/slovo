@@ -10,12 +10,12 @@ use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use super::protocol::{
+use super::{BackendKind, ShortcutBackendStatus, ShortcutChord, ShortcutError};
+use crate::{handle_hotkey_action, HotkeyEvent};
+use slovo_shortcut_core::protocol::{
     decode_helper_line, encode_parent_line, read_bounded_line, EventState, HelperMessage,
     ParentCommand, PROTOCOL_VERSION,
 };
-use super::{BackendKind, ShortcutBackendStatus, ShortcutChord, ShortcutError};
-use crate::{handle_hotkey_action, HotkeyEvent};
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(1);
@@ -265,10 +265,6 @@ impl WaylandSupervisor {
             HelperMessage::Ready { .. } => Ok(supervisor),
             _ => unreachable!(),
         }
-    }
-
-    pub fn active_chord(&self) -> Option<&ShortcutChord> {
-        self.active.as_ref()
     }
 
     pub fn status(&self) -> ShortcutBackendStatus {
@@ -603,7 +599,7 @@ mod tests {
     use std::io::Cursor;
     use std::sync::mpsc::RecvTimeoutError;
 
-    use super::super::protocol::{
+    use slovo_shortcut_core::protocol::{
         decode_parent_line, encode_helper_line, HelperMessage, ParentCommand, MAX_LINE_BYTES,
     };
 
