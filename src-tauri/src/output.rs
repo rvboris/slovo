@@ -14,8 +14,8 @@ pub fn copy_and_insert(text: &str) -> Result<bool, String> {
         .map_err(|error| format!("clipboard populated; input injection unavailable: {error}"))?;
     enigo
         .key(Key::Control, Direction::Press)
-        .and_then(|_| enigo.key(Key::Unicode('v'), Direction::Click))
-        .and_then(|_| enigo.key(Key::Control, Direction::Release))
+        .and_then(|()| enigo.key(Key::Unicode('v'), Direction::Click))
+        .and_then(|()| enigo.key(Key::Control, Direction::Release))
         .map_err(|error| format!("clipboard populated; paste injection failed: {error}"))?;
     Ok(true)
 }

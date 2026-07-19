@@ -14,7 +14,7 @@ mod device_loop;
 
 use device_loop::{DeviceLoop, ScanSummary};
 
-fn evdev_debug_enabled() -> bool {
+pub(crate) fn evdev_debug_enabled() -> bool {
     std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1")
 }
 
@@ -24,7 +24,7 @@ pub fn run() -> Result<(), String> {
     let (sender, receiver) = mpsc::channel();
     thread::Builder::new()
         .name("slovo-helper-stdin".into())
-        .spawn(move || read_commands(sender))
+        .spawn(move || read_commands(&sender))
         .map_err(|error| format!("cannot start command reader: {error}"))?;
 
     let stdout = io::stdout();
@@ -36,10 +36,10 @@ pub fn run() -> Result<(), String> {
     report_scan_diagnostic(&initial);
 
     loop {
-        // Defense-in-depth parent-death detection: if the parent process has
-        // been reparented to init (pid 1), exit cleanly. This replaces
-        // PR_SET_PDEATHSIG which has unreliable thread-based semantics under
-        // multi-threaded hosts. Stdin EOF remains the primary signal.
+        // Backup parent-death detection: PR_SET_PDEATHSIG is the primary
+        // mechanism, but if a subreaper has reparented us to init (pid 1)
+        // without delivering SIGTERM, we still exit cleanly here. Stdin EOF
+        // remains the primary cooperative shutdown signal.
         if unsafe { libc::getppid() } != parent_pid {
             return Ok(());
         }
@@ -89,17 +89,39 @@ pub fn run() -> Result<(), String> {
 
 // Raw evdev events stay in this helper rather than the WebView/main event path.
 // This is an isolation boundary for accidental exposure, not a privilege boundary
-// against another process already running as the same user. Stdin EOF is the
-// primary lifetime signal. PR_SET_PDEATHSIG was removed because on Linux it
-// signals when the parent *thread* (not process) terminates, which in a
-// multi-threaded Tauri/WebKitGTK host can fire spuriously and kill the helper
-// before it writes any protocol output.
+// against another process already running as the same user.
+//
+// Lifetime is guarded by two complementary mechanisms:
+//   1. PR_SET_PDEATHSIG (primary): the kernel delivers SIGTERM to this process
+//      when its parent dies. prctl(2) documents this as triggering on parent
+//      *process* termination, and we install it at the very start of run()
+//      before any threads are spawned, so the signal target is well-defined.
+//   2. getppid() poll (backup): the main loop below still checks whether the
+//      parent has been reparented to init (pid 1) and exits cleanly. This is a
+//      defense-in-depth in case PDEATHSIG delivery is suppressed (e.g. by a
+//      subreaper).
+// Stdin EOF remains the primary cooperative shutdown signal.
 fn harden_process() -> Result<(), String> {
-    if unsafe { libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) } != 0 {
-        return Err(format!(
-            "cannot set no-new-privileges: {}",
-            io::Error::last_os_error()
-        ));
+    unsafe {
+        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) != 0 {
+            return Err(format!(
+                "cannot set parent-death signal: {}",
+                io::Error::last_os_error()
+            ));
+        }
+        if libc::prctl(
+            libc::PR_SET_NO_NEW_PRIVS,
+            libc::c_ulong::from(1u32),
+            0,
+            0,
+            0,
+        ) != 0
+        {
+            return Err(format!(
+                "cannot set no-new-privileges: {}",
+                io::Error::last_os_error()
+            ));
+        }
     }
     Ok(())
 }
@@ -118,7 +140,7 @@ enum ReaderMessage {
     Closed,
 }
 
-fn read_commands(sender: mpsc::Sender<ReaderMessage>) {
+fn read_commands(sender: &mpsc::Sender<ReaderMessage>) {
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     loop {
@@ -190,15 +212,14 @@ impl CommandState {
                 ..
             } => {
                 if protocol_version != PROTOCOL_VERSION {
-                    return self
-                        .error(
-                            output,
-                            Some(id),
-                            "invalid-command",
-                            "unsupported protocol version",
-                            false,
-                        )
-                        .map(|_| false);
+                    return Self::error(
+                        output,
+                        Some(id),
+                        "invalid-command",
+                        "unsupported protocol version",
+                        false,
+                    )
+                    .map(|()| false);
                 }
                 emit(
                     output,
@@ -224,7 +245,7 @@ impl CommandState {
                 report_scan_diagnostic(&summary);
                 if summary.readable == 0 {
                     let (code, message) = summary_error(&summary);
-                    self.error(output, Some(id), code, message, true)?;
+                    Self::error(output, Some(id), code, message, true)?;
                 }
                 emit(
                     output,
@@ -252,17 +273,14 @@ impl CommandState {
         device_count: usize,
         output: &mut W,
     ) -> Result<(), String> {
-        let chord = match chord.parse::<ShortcutChord>() {
-            Ok(chord) => chord,
-            Err(_) => {
-                return self.error(
-                    output,
-                    Some(id),
-                    "invalid-command",
-                    "invalid shortcut chord",
-                    true,
-                )
-            }
+        let Ok(chord) = chord.parse::<ShortcutChord>() else {
+            return Self::error(
+                output,
+                Some(id),
+                "invalid-command",
+                "invalid shortcut chord",
+                true,
+            );
         };
         if evdev_debug_enabled() {
             eprintln!(
@@ -307,7 +325,6 @@ impl CommandState {
     }
 
     fn error<W: Write>(
-        &self,
         output: &mut W,
         reply_to: Option<u64>,
         code: &str,
@@ -330,7 +347,7 @@ fn emit<W: Write>(output: &mut W, message: &HelperMessage) -> Result<(), String>
     let line = encode_helper_line(message).map_err(|error| error.to_string())?;
     output
         .write_all(&line)
-        .and_then(|_| output.flush())
+        .and_then(|()| output.flush())
         .map_err(|error| format!("cannot write protocol output: {error}"))
 }
 

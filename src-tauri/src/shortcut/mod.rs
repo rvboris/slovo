@@ -153,7 +153,7 @@ impl ShortcutManager {
         match self {
             Self::Native(backend) => backend.register(app, chord),
             #[cfg(target_os = "linux")]
-            Self::Wayland(backend) => backend.replace(chord),
+            Self::Wayland(backend) => backend.replace(&chord),
             Self::LegacyPortal => Ok(()),
         }
     }

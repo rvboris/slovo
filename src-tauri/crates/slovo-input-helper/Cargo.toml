@@ -3,6 +3,9 @@ name = "slovo-input-helper"
 version = "0.1.0"
 edition = "2021"
 
+[lints]
+workspace = true
+
 [dependencies]
 slovo-shortcut-core = { path = "../slovo-shortcut-core" }
 

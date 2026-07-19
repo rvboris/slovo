@@ -152,10 +152,12 @@ pub struct ShortcutChord {
 }
 
 impl ShortcutChord {
+    #[must_use]
     pub fn modifiers(&self) -> &[ShortcutModifier] {
         &self.modifiers
     }
 
+    #[must_use]
     pub fn key(&self) -> &ShortcutKey {
         &self.key
     }

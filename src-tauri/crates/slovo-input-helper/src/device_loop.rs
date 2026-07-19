@@ -9,13 +9,11 @@ use polling::{Event, Events, PollMode, Poller};
 
 use slovo_shortcut_core::matcher::{DeviceId, InputCode, InputValue, MatchEvent, Matcher};
 
+use crate::evdev_debug_enabled;
+
 const RESCAN_INTERVAL: Duration = Duration::from_secs(5);
 const DEVICE_KEY_BASE: usize = 2;
 const UDEV_KEY: usize = 1;
-
-fn evdev_debug_enabled() -> bool {
-    std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1")
-}
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ScanSummary {
@@ -54,7 +52,9 @@ impl DeviceLoop {
             monitor,
             devices: HashMap::new(),
             next_id: 1,
-            last_scan: Instant::now() - RESCAN_INTERVAL,
+            last_scan: Instant::now()
+                .checked_sub(RESCAN_INTERVAL)
+                .unwrap_or_else(Instant::now),
             removed_ids: Vec::new(),
         })
     }
@@ -173,7 +173,9 @@ impl DeviceLoop {
                 )?;
                 continue;
             }
-            let id = (key - DEVICE_KEY_BASE) as DeviceId;
+            let Some(id) = DeviceId::try_from(key - DEVICE_KEY_BASE).ok() else {
+                continue;
+            };
             let path = self
                 .devices
                 .iter()
