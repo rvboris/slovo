@@ -1,4 +1,4 @@
-//! XDG Desktop Portal GlobalShortcuts client for Wayland session support.
+//! XDG Desktop Portal `GlobalShortcuts` client for Wayland session support.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -10,6 +10,9 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::{proxy, Connection, Proxy};
 
 static TOKEN_COUNTER: AtomicU64 = AtomicU64::new(1);
+
+type PortalOptions<'a> = HashMap<String, zbus::zvariant::Value<'a>>;
+type PortalShortcuts<'a> = [(String, PortalOptions<'a>); 1];
 
 use crate::{handle_hotkey_action, HotkeyEvent};
 
@@ -119,26 +122,12 @@ async fn portal_loop(
         .map_err(|e| format!("create session response: {e}"))?;
     let session_handle = session_handle(&create_results)?;
 
-    let bind_token = unique_token("bind");
+    let (bind_token, shortcuts, bind_opts) =
+        bind_arguments(description, preferred_trigger.as_str());
     let bind_path = request_path(&connection, &bind_token)?;
     let mut bind_response = subscribe_response(&connection, &bind_path)
         .await
         .map_err(|e| format!("bind shortcuts: {e}"))?;
-    let mut shortcut = HashMap::new();
-    shortcut.insert(
-        "description".to_string(),
-        zbus::zvariant::Value::Str(description.into()),
-    );
-    shortcut.insert(
-        "preferred_trigger".to_string(),
-        zbus::zvariant::Value::Str(preferred_trigger.as_str().into()),
-    );
-    let shortcuts = [("slovo_dictate".to_string(), shortcut)];
-    let mut bind_opts = HashMap::new();
-    bind_opts.insert(
-        "handle_token".to_string(),
-        zbus::zvariant::Value::Str(bind_token.as_str().into()),
-    );
     eprintln!("[slovo] portal: binding preferred trigger {preferred_trigger}");
     let returned_bind_path = proxy
         .bind_shortcuts(&session_handle, &shortcuts, "", &bind_opts)
@@ -190,6 +179,29 @@ async fn portal_loop(
     }
     close_session(&connection, &session_handle).await;
     Ok(())
+}
+
+fn bind_arguments<'a>(
+    description: &'a str,
+    preferred_trigger: &'a str,
+) -> (String, PortalShortcuts<'a>, PortalOptions<'a>) {
+    let bind_token = unique_token("bind");
+    let mut shortcut = HashMap::new();
+    shortcut.insert(
+        "description".to_string(),
+        zbus::zvariant::Value::Str(description.into()),
+    );
+    shortcut.insert(
+        "preferred_trigger".to_string(),
+        zbus::zvariant::Value::Str(preferred_trigger.into()),
+    );
+    let shortcuts = [("slovo_dictate".to_string(), shortcut)];
+    let mut bind_opts = HashMap::new();
+    bind_opts.insert(
+        "handle_token".to_string(),
+        zbus::zvariant::Value::Str(bind_token.as_str().to_owned().into()),
+    );
+    (bind_token, shortcuts, bind_opts)
 }
 
 fn unique_token(stage: &str) -> String {
@@ -245,21 +257,21 @@ fn ensure_request_path(
 async fn wait_create_response(
     stream: &mut zbus::proxy::SignalStream<'_>,
 ) -> Result<HashMap<String, OwnedValue>, String> {
-    let message = tokio::time::timeout(std::time::Duration::from_secs(60), stream.next())
+    let message = tokio::time::timeout(std::time::Duration::from_mins(1), stream.next())
         .await
         .map_err(|_| "portal response timed out".to_string())?
         .ok_or("portal response stream ended")?;
-    parse_response(message)
+    parse_response(&message)
 }
 
 async fn wait_bind_response(
     stream: &mut zbus::proxy::SignalStream<'_>,
 ) -> Result<HashMap<String, OwnedValue>, String> {
     let message = stream.next().await.ok_or("portal response stream ended")?;
-    parse_response(message)
+    parse_response(&message)
 }
 
-fn parse_response(message: zbus::Message) -> Result<HashMap<String, OwnedValue>, String> {
+fn parse_response(message: &zbus::Message) -> Result<HashMap<String, OwnedValue>, String> {
     let (code, results): (u32, HashMap<String, OwnedValue>) = message
         .body()
         .deserialize()

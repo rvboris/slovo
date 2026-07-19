@@ -1,3 +1,5 @@
+use std::sync::OnceLock;
+
 use crate::settings;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
@@ -7,13 +9,19 @@ struct Response {
     text: String,
 }
 
+static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+fn shared_client() -> &'static reqwest::Client {
+    HTTP_CLIENT.get_or_init(reqwest::Client::new)
+}
+
 pub async fn transcribe(server_url: &str, wav: Vec<u8>) -> Result<String, String> {
     let url = settings::transcription_url(server_url)?;
     let audio = Part::bytes(wav)
         .file_name("recording.wav")
         .mime_str("audio/wav")
         .map_err(|error| error.to_string())?;
-    let response = reqwest::Client::new()
+    let response = shared_client()
         .post(url)
         .multipart(Form::new().part("file", audio).text("model", "whisper-1"))
         .send()

@@ -68,7 +68,17 @@ fn path(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn load_from_path(path: &std::path::Path) -> Result<Settings, String> {
     let bytes = fs::read(path).map_err(|error| error.to_string())?;
-    serde_json::from_slice(&bytes).map_err(|error| error.to_string())
+    let mut settings: Settings =
+        serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    // Persisted device names can drift (quotes, surrounding whitespace, or an
+    // empty string saved by an older build). Normalize at the load boundary so
+    // every consumer sees a trimmed, non-empty name or `None`.
+    settings.input_device = settings
+        .input_device
+        .take()
+        .map(|device| device.trim().to_owned())
+        .filter(|device| !device.is_empty());
+    Ok(settings)
 }
 
 fn save_to_path(path: &std::path::Path, settings: &Settings) -> Result<(), String> {

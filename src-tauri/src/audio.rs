@@ -1,11 +1,12 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
+use num_traits::cast;
 use std::io::Cursor;
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const TARGET_RATE: u32 = 16_000;
-const MAX_DURATION: Duration = Duration::from_secs(120);
+const MAX_DURATION: Duration = Duration::from_mins(2);
 const VAD_MIN_RECORDING: Duration = Duration::from_millis(400);
 const VAD_SILENCE: Duration = Duration::from_millis(900);
 const VAD_THRESHOLD_MULTIPLIER: f32 = 3.0;
@@ -31,6 +32,15 @@ struct ActiveRecording {
     sample_rate: u32,
 }
 
+impl Drop for ActiveRecording {
+    fn drop(&mut self) {
+        // Pausing (rather than dropping) is the cpal-recommended way to release
+        // the microphone cleanly: the underlying stream handle may be moved
+        // out before Drop runs (see Command::Stop), and pause() is idempotent.
+        let _ = self.stream.pause();
+    }
+}
+
 #[derive(Clone)]
 pub struct AudioController {
     commands: mpsc::Sender<Command>,
@@ -52,9 +62,11 @@ impl AudioController {
                         let result = if active.is_some() {
                             Err("recording is already active".into())
                         } else {
-                            open_stream(auto_vad, device_name, on_auto_stop).map(|recording| {
-                                active = Some(recording);
-                            })
+                            open_stream(auto_vad, device_name.as_deref(), on_auto_stop).map(
+                                |recording| {
+                                    active = Some(recording);
+                                },
+                            )
                         };
                         let _ = reply.send(result);
                     }
@@ -63,14 +75,19 @@ impl AudioController {
                             .take()
                             .ok_or_else(|| "no active recording".into())
                             .and_then(|recording| {
-                                drop(recording.stream);
+                                // Pull the buffered samples and sample rate out
+                                // before dropping the recording: Drop pauses
+                                // the stream so no further samples arrive,
+                                // then we resample what was captured.
+                                let sample_rate = recording.sample_rate;
                                 let samples = recording
                                     .samples
                                     .lock()
                                     .map_err(|_| "microphone buffer lock poisoned")?
                                     .clone();
+                                drop(recording);
                                 wav_bytes(
-                                    &resample_linear(&samples, recording.sample_rate, TARGET_RATE),
+                                    &resample_linear(&samples, sample_rate, TARGET_RATE),
                                     TARGET_RATE,
                                 )
                             });
@@ -111,11 +128,11 @@ impl AudioController {
 
 fn open_stream(
     auto_vad: bool,
-    device_name: Option<String>,
+    device_name: Option<&str>,
     on_auto_stop: StopCallback,
 ) -> Result<ActiveRecording, String> {
     let host = cpal::default_host();
-    let device = match device_name.as_deref().map(str::trim) {
+    let device = match device_name.map(str::trim) {
         Some(name) if !name.is_empty() => select_device_by_name(&host, name)?,
         _ => host
             .default_input_device()
@@ -164,9 +181,11 @@ fn open_stream(
 
     let stream = match supported.sample_format() {
         SampleFormat::F32 => build_stream!(f32, |sample: f32| sample),
-        SampleFormat::I16 => build_stream!(i16, |sample: i16| sample as f32 / i16::MAX as f32),
+        SampleFormat::I16 => {
+            build_stream!(i16, |sample: i16| f32::from(sample) / f32::from(i16::MAX))
+        }
         SampleFormat::U16 => build_stream!(u16, |sample: u16| {
-            sample as f32 / u16::MAX as f32 * 2.0 - 1.0
+            (f32::from(sample) / f32::from(u16::MAX)).mul_add(2.0, -1.0)
         }),
         format => return Err(format!("unsupported microphone sample format: {format:?}")),
     }
@@ -187,9 +206,8 @@ fn select_device_by_name(host: &cpal::Host, wanted: &str) -> Result<cpal::Device
         .map_err(|error| format!("cannot enumerate input devices: {error}"))?;
     let mut fallback: Option<cpal::Device> = None;
     for device in devices {
-        let name = match device.name() {
-            Ok(name) => name,
-            Err(_) => continue,
+        let Ok(name) = device.name() else {
+            continue;
         };
         if name.trim() == wanted {
             return Ok(device);
@@ -259,9 +277,14 @@ impl Vad {
         if samples.is_empty() {
             return false;
         }
-        let rms = (samples.iter().map(|v| v * v).sum::<f32>() / samples.len() as f32).sqrt();
+        let (sum_squares, sample_count) = samples
+            .iter()
+            .fold((0.0_f32, 0.0_f32), |(sum, count), value| {
+                (value.mul_add(*value, sum), count + 1.0)
+            });
+        let rms = (sum_squares / sample_count).sqrt();
         if !self.speech_seen {
-            self.noise_rms = self.noise_rms * 0.98 + rms * 0.02;
+            self.noise_rms = rms.mul_add(0.02, self.noise_rms * 0.98);
         }
         let speech = rms > (self.noise_rms * VAD_THRESHOLD_MULTIPLIER).max(VAD_MIN_THRESHOLD);
         if speech {
@@ -288,7 +311,16 @@ pub fn interleaved_to_mono<T: Copy>(
     }
     input
         .chunks_exact(channels)
-        .map(|frame| frame.iter().copied().map(&convert).sum::<f32>() / channels as f32)
+        .map(|frame| {
+            let (sum, count) = frame
+                .iter()
+                .copied()
+                .map(&convert)
+                .fold((0.0_f32, 0.0_f32), |(sum, count), value| {
+                    (sum + value, count + 1.0)
+                });
+            sum / count
+        })
         .collect()
 }
 
@@ -299,14 +331,32 @@ pub fn resample_linear(input: &[f32], source_rate: u32, target_rate: u32) -> Vec
     if source_rate == target_rate {
         return input.to_vec();
     }
-    let output_len = ((input.len() as u64 * target_rate as u64) / source_rate as u64) as usize;
+    let Ok(target_rate_usize) = usize::try_from(target_rate) else {
+        return Vec::new();
+    };
+    let Ok(source_rate_usize) = usize::try_from(source_rate) else {
+        return Vec::new();
+    };
+    let Some(output_len) = input
+        .len()
+        .checked_mul(target_rate_usize)
+        .map(|scaled| scaled / source_rate_usize)
+    else {
+        return Vec::new();
+    };
+    let source_rate = f64::from(source_rate);
+    let target_rate = f64::from(target_rate);
     (0..output_len)
         .map(|index| {
-            let source_pos = index as f64 * source_rate as f64 / target_rate as f64;
-            let left = source_pos.floor() as usize;
-            let right = (left + 1).min(input.len() - 1);
-            let fraction = (source_pos - left as f64) as f32;
-            input[left] + (input[right] - input[left]) * fraction
+            let source_pos =
+                cast::<usize, f64>(index).unwrap_or(f64::MAX) * source_rate / target_rate;
+            let left = cast::<f64, usize>(source_pos.floor())
+                .unwrap_or(input.len() - 1)
+                .min(input.len() - 1);
+            let right = left.saturating_add(1).min(input.len() - 1);
+            let left_position = cast::<usize, f64>(left).unwrap_or(source_pos);
+            let fraction = cast::<f64, f32>(source_pos - left_position).unwrap_or_default();
+            (input[right] - input[left]).mul_add(fraction, input[left])
         })
         .collect()
 }
@@ -321,7 +371,14 @@ pub fn wav_bytes(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
     };
     let mut writer = hound::WavWriter::new(&mut cursor, spec).map_err(|e| e.to_string())?;
     for sample in samples {
-        let value = (sample.clamp(-1.0, 1.0) * i16::MAX as f32).round() as i16;
+        let scaled = (sample.clamp(-1.0, 1.0) * f32::from(i16::MAX)).round();
+        let value = cast::<f32, i16>(scaled).unwrap_or_else(|| {
+            if scaled.is_sign_negative() {
+                i16::MIN
+            } else {
+                i16::MAX
+            }
+        });
         writer.write_sample(value).map_err(|e| e.to_string())?;
     }
     writer.finalize().map_err(|e| e.to_string())?;

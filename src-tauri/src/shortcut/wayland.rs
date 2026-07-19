@@ -30,9 +30,7 @@ fn read_helper_record<R: BufRead>(reader: &mut R) -> HelperRecord {
     let mut line = Vec::new();
     match read_bounded_line(reader, &mut line) {
         Ok(false) => HelperRecord::Eof,
-        Ok(true) => decode_helper_line(&line)
-            .map(HelperRecord::Message)
-            .unwrap_or(HelperRecord::Invalid),
+        Ok(true) => decode_helper_line(&line).map_or(HelperRecord::Invalid, HelperRecord::Message),
         Err(_) => HelperRecord::Invalid,
     }
 }
@@ -90,6 +88,141 @@ pub struct WaylandSupervisor {
     reaped: bool,
 }
 
+fn spawn_helper_process(
+    path: &PathBuf,
+) -> Result<
+    (
+        Child,
+        ChildStdin,
+        std::process::ChildStdout,
+        std::process::ChildStderr,
+    ),
+    ShortcutError,
+> {
+    let mut child = Command::new(path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| {
+            ShortcutError::Backend(format!("cannot start helper {}: {error}", path.display()))
+        })?;
+    log_wayland(&format!("helper child pid {}", child.id()));
+    let input = child
+        .stdin
+        .take()
+        .ok_or_else(|| ShortcutError::Backend("helper stdin was not available".to_owned()))?;
+    let output = child
+        .stdout
+        .take()
+        .ok_or_else(|| ShortcutError::Backend("helper stdout was not available".to_owned()))?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| ShortcutError::Backend("helper stderr was not available".to_owned()))?;
+    Ok((child, input, output, stderr))
+}
+
+fn spawn_protocol_reader(
+    output: std::process::ChildStdout,
+    sender: mpsc::Sender<Result<HelperMessage, String>>,
+    filter: Arc<Mutex<EventFilter>>,
+    status: Arc<Mutex<ShortcutBackendStatus>>,
+    app: AppHandle,
+    supervisor_generation: Arc<AtomicU64>,
+    identity: u64,
+) -> Result<(), ShortcutError> {
+    thread::Builder::new()
+        .name("slovo-helper-protocol".into())
+        .spawn(move || {
+            let mut reader = BufReader::new(output);
+            loop {
+                match read_helper_record(&mut reader) {
+                    HelperRecord::Eof => {
+                        let detail = "helper closed protocol output".to_owned();
+                        set_shared_status_if_current(
+                            &app,
+                            &status,
+                            &supervisor_generation,
+                            identity,
+                            ShortcutBackendStatus::Failed {
+                                backend: BackendKind::WaylandHelper,
+                                detail: detail.clone(),
+                            },
+                        );
+                        let _ = sender.send(Err(detail));
+                        synthesize_release(&app, &filter);
+                        break;
+                    }
+                    HelperRecord::Message(HelperMessage::Event {
+                        generation,
+                        seq,
+                        state,
+                    }) => {
+                        let event = filter
+                            .lock()
+                            .ok()
+                            .and_then(|mut filter| filter.accept(generation, seq, state));
+                        if let Some(event) = event {
+                            handle_hotkey_action(&app, event);
+                        }
+                    }
+                    HelperRecord::Message(message @ HelperMessage::Error { .. }) => {
+                        let detail = format!("helper protocol error: {message:?}");
+                        set_shared_status_if_current(
+                            &app,
+                            &status,
+                            &supervisor_generation,
+                            identity,
+                            ShortcutBackendStatus::Failed {
+                                backend: BackendKind::WaylandHelper,
+                                detail: detail.clone(),
+                            },
+                        );
+                        let _ = sender.send(Err(detail));
+                        synthesize_release(&app, &filter);
+                        break;
+                    }
+                    HelperRecord::Message(message) => {
+                        if sender.send(Ok(message)).is_err() {
+                            break;
+                        }
+                    }
+                    HelperRecord::Invalid => {
+                        let detail = "helper emitted malformed protocol".to_owned();
+                        set_shared_status_if_current(
+                            &app,
+                            &status,
+                            &supervisor_generation,
+                            identity,
+                            ShortcutBackendStatus::Failed {
+                                backend: BackendKind::WaylandHelper,
+                                detail: detail.clone(),
+                            },
+                        );
+                        let _ = sender.send(Err(detail));
+                        synthesize_release(&app, &filter);
+                        break;
+                    }
+                }
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| ShortcutError::Backend(format!("cannot start helper reader: {error}")))
+}
+
+fn spawn_stderr_reader(stderr: std::process::ChildStderr) -> Result<(), ShortcutError> {
+    thread::Builder::new()
+        .name("slovo-helper-stderr".into())
+        .spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                eprintln!("[slovo-input-helper] {line}");
+            }
+        })
+        .map(|_| ())
+        .map_err(|error| ShortcutError::Backend(format!("cannot drain helper stderr: {error}")))
+}
+
 impl WaylandSupervisor {
     pub fn spawn(app: AppHandle) -> Result<Self, ShortcutError> {
         Self::spawn_generation(app, Arc::new(AtomicU64::new(0)), 0)
@@ -102,114 +235,22 @@ impl WaylandSupervisor {
     ) -> Result<Self, ShortcutError> {
         let path = resolve_helper_path().map_err(ShortcutError::Backend)?;
         log_wayland(&format!("spawning helper at {}", path.display()));
-        let mut child = Command::new(&path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|error| {
-                ShortcutError::Backend(format!("cannot start helper {}: {error}", path.display()))
-            })?;
-        log_wayland(&format!("helper child pid {}", child.id()));
-        let input = child
-            .stdin
-            .take()
-            .ok_or_else(|| ShortcutError::Backend("helper stdin was not available".to_owned()))?;
-        let output = child
-            .stdout
-            .take()
-            .ok_or_else(|| ShortcutError::Backend("helper stdout was not available".to_owned()))?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| ShortcutError::Backend("helper stderr was not available".to_owned()))?;
+        let (child, input, output, stderr) = spawn_helper_process(&path)?;
         let (sender, messages) = mpsc::channel();
         let filter = Arc::new(Mutex::new(EventFilter::default()));
-        let reader_filter = filter.clone();
         let status = Arc::new(Mutex::new(ShortcutBackendStatus::Starting {
             backend: BackendKind::WaylandHelper,
         }));
-        let reader_status = status.clone();
-        let reader_app = app.clone();
-        let reader_generation = supervisor_generation.clone();
-        thread::Builder::new()
-            .name("slovo-helper-protocol".into())
-            .spawn(move || {
-                let mut reader = BufReader::new(output);
-                loop {
-                    match read_helper_record(&mut reader) {
-                        HelperRecord::Eof => {
-                            let detail = "helper closed protocol output".to_owned();
-                            set_shared_status_if_current(
-                                &reader_app,
-                                &reader_status,
-                                &reader_generation,
-                                identity,
-                                ShortcutBackendStatus::Failed {
-                                    backend: BackendKind::WaylandHelper,
-                                    detail: detail.clone(),
-                                },
-                            );
-                            let _ = sender.send(Err(detail));
-                            synthesize_release(&reader_app, &reader_filter);
-                            break;
-                        }
-                        HelperRecord::Message(HelperMessage::Event {
-                            generation,
-                            seq,
-                            state,
-                        }) => {
-                            let event = reader_filter
-                                .lock()
-                                .ok()
-                                .and_then(|mut filter| filter.accept(generation, seq, state));
-                            if evdev_debug_enabled() {
-                                log_wayland(&format!(
-                                    "received event generation={generation} seq={seq} state={state:?} accepted={}",
-                                    event.is_some()
-                                ));
-                            }
-                            if let Some(event) = event {
-                                handle_hotkey_action(&reader_app, event);
-                            }
-                        }
-                        HelperRecord::Message(message) => {
-                            if sender.send(Ok(message)).is_err() {
-                                break;
-                            }
-                        }
-                        HelperRecord::Invalid => {
-                            let detail = "helper emitted malformed protocol".to_owned();
-                            set_shared_status_if_current(
-                                &reader_app,
-                                &reader_status,
-                                &reader_generation,
-                                identity,
-                                ShortcutBackendStatus::Failed {
-                                    backend: BackendKind::WaylandHelper,
-                                    detail: detail.clone(),
-                                },
-                            );
-                            let _ = sender.send(Err(detail));
-                            synthesize_release(&reader_app, &reader_filter);
-                            break;
-                        }
-                    }
-                }
-            })
-            .map_err(|error| {
-                ShortcutError::Backend(format!("cannot start helper reader: {error}"))
-            })?;
-        thread::Builder::new()
-            .name("slovo-helper-stderr".into())
-            .spawn(move || {
-                for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                    eprintln!("[slovo-input-helper] {line}");
-                }
-            })
-            .map_err(|error| {
-                ShortcutError::Backend(format!("cannot drain helper stderr: {error}"))
-            })?;
+        spawn_protocol_reader(
+            output,
+            sender,
+            filter.clone(),
+            status.clone(),
+            app.clone(),
+            supervisor_generation.clone(),
+            identity,
+        )?;
+        spawn_stderr_reader(stderr)?;
 
         let mut supervisor = Self {
             child,
@@ -242,7 +283,7 @@ impl WaylandSupervisor {
         supervisor
             .input
             .write_all(&hello_bytes)
-            .and_then(|_| supervisor.input.flush())
+            .and_then(|()| supervisor.input.flush())
             .map_err(|error| {
                 ShortcutError::Backend(format!("cannot write hello to helper stdin: {error}"))
             })?;
@@ -268,13 +309,13 @@ impl WaylandSupervisor {
     }
 
     pub fn status(&self) -> ShortcutBackendStatus {
-        self.status
-            .lock()
-            .map(|status| status.clone())
-            .unwrap_or(ShortcutBackendStatus::Failed {
+        self.status.lock().map_or_else(
+            |_| ShortcutBackendStatus::Failed {
                 backend: BackendKind::WaylandHelper,
                 detail: "shortcut status lock poisoned".into(),
-            })
+            },
+            |status| status.clone(),
+        )
     }
 
     pub fn retry(&mut self) -> Result<(), ShortcutError> {
@@ -298,20 +339,20 @@ impl WaylandSupervisor {
         self.supervisor_generation
             .store(identity, Ordering::Release);
         if let Some(chord) = desired {
-            replacement.replace(chord)?;
+            replacement.replace(&chord)?;
         }
         std::mem::swap(self, &mut replacement);
         Ok(())
     }
 
-    pub fn replace(&mut self, chord: ShortcutChord) -> Result<(), ShortcutError> {
+    pub fn replace(&mut self, chord: &ShortcutChord) -> Result<(), ShortcutError> {
         if evdev_debug_enabled() {
             log_wayland(&format!(
                 "replace invoked chord={} active={:?} identity={}",
                 chord, self.active, self.identity
             ));
         }
-        if self.active.as_ref() == Some(&chord) {
+        if self.active.as_ref() == Some(chord) {
             if evdev_debug_enabled() {
                 log_wayland("replace: chord unchanged, returning Ok");
             }
@@ -324,22 +365,18 @@ impl WaylandSupervisor {
             .ok_or_else(|| ShortcutError::Backend("helper generation exhausted".to_owned()))?;
         let generation = self.generation;
         let id = self.next_command_id();
-        let release = self
-            .filter
-            .lock()
-            .map(|mut filter| {
-                let release = filter.release();
-                filter.configure(generation);
-                release
-            })
-            .unwrap_or(false);
+        let release = self.filter.lock().is_ok_and(|mut filter| {
+            let release = filter.release();
+            filter.configure(generation);
+            release
+        });
         if release {
             handle_hotkey_action(&self.app, HotkeyEvent::Released);
         }
         if evdev_debug_enabled() {
             log_wayland(&format!("replace: sending configure gen={generation}"));
         }
-        self.send(&ParentCommand::configure(id, generation, &chord))?;
+        self.send(&ParentCommand::configure(id, generation, chord))?;
         if evdev_debug_enabled() {
             log_wayland("replace: waiting for Configured ack");
         }
@@ -378,7 +415,7 @@ impl WaylandSupervisor {
         self.set_status(ShortcutBackendStatus::ShuttingDown);
         self.synthesize_release();
         let id = self.next_command_id();
-        let result = self.send(&ParentCommand::Shutdown { id }).and_then(|_| {
+        let result = self.send(&ParentCommand::Shutdown { id }).and_then(|()| {
             self.wait_for(
                 SHUTDOWN_TIMEOUT,
                 |message| matches!(message, HelperMessage::Bye { reply_to } if *reply_to == id),
@@ -406,7 +443,7 @@ impl WaylandSupervisor {
             .map_err(|error| ShortcutError::Backend(error.to_string()))?;
         self.input
             .write_all(&line)
-            .and_then(|_| self.input.flush())
+            .and_then(|()| self.input.flush())
             .map_err(|error| self.fail(format!("cannot write helper command: {error}")))
     }
 
@@ -447,7 +484,7 @@ impl WaylandSupervisor {
         }
     }
 
-    fn fail(&mut self, message: String) -> ShortcutError {
+    fn fail(&self, message: String) -> ShortcutError {
         self.set_status(ShortcutBackendStatus::Failed {
             backend: BackendKind::WaylandHelper,
             detail: message.clone(),
@@ -516,8 +553,8 @@ fn set_shared_status(
         *value = status.clone();
     }
     if let Some(state) = app.try_state::<crate::AppState>() {
-        if let Ok(mut value) = state.shortcut_status.lock() {
-            *value = status.clone();
+        if let Ok(mut shortcut) = state.shortcut.lock() {
+            shortcut.status = status.clone();
         }
     }
     let _ = app.emit("slovo://shortcut-status", status);
@@ -551,10 +588,7 @@ fn status_from_helper_error(code: &str) -> ShortcutBackendStatus {
 }
 
 fn synthesize_release(app: &AppHandle, filter: &Arc<Mutex<EventFilter>>) {
-    let release = filter
-        .lock()
-        .map(|mut state| state.release())
-        .unwrap_or(false);
+    let release = filter.lock().is_ok_and(|mut state| state.release());
     if release {
         handle_hotkey_action(app, HotkeyEvent::Released);
     }

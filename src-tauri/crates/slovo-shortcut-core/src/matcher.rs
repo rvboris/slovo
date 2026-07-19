@@ -3,7 +3,7 @@ use std::ops::{BitOr, BitOrAssign};
 
 use super::chord::{ShortcutChord, ShortcutKey, ShortcutModifier};
 
-pub type DeviceId = u64;
+pub type DeviceId = u32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum InputCode {
@@ -19,7 +19,8 @@ pub enum InputCode {
 }
 
 impl InputCode {
-    pub fn modifier(self) -> Option<Modifiers> {
+    #[must_use]
+    pub const fn modifier(self) -> Option<Modifiers> {
         match self {
             Self::CtrlLeft | Self::CtrlRight => Some(Modifiers::CTRL),
             Self::AltLeft | Self::AltRight => Some(Modifiers::ALT),
@@ -47,7 +48,8 @@ impl Modifiers {
     pub const SHIFT: Self = Self(1 << 2);
     pub const SUPER: Self = Self(1 << 3);
 
-    pub fn contains(self, other: Self) -> bool {
+    #[must_use]
+    pub const fn contains(self, other: Self) -> bool {
         self.0 & other.0 == other.0
     }
 }
@@ -166,7 +168,7 @@ impl From<&ShortcutKey> for InputCode {
             ShortcutKey::ArrowRight => 106,
             ShortcutKey::ArrowUp => 103,
         };
-        InputCode::Primary(code)
+        Self::Primary(code)
     }
 }
 

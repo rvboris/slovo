@@ -1786,6 +1786,7 @@ dependencies = [
  "enigo",
  "futures-util",
  "hound",
+ "num-traits",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

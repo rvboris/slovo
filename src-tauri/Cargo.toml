@@ -2,6 +2,18 @@
 members = ["crates/slovo-shortcut-core", "crates/slovo-input-helper"]
 resolver = "2"
 
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+nursery  = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_const_for_fn = "allow"
+module_name_repetitions = "allow"
+redundant_pub_crate = "allow"
+
+[workspace.lints.rust]
+unreachable_pub = "allow"
+
 [package]
 name = "homeborismygitslovo"
 version = "0.1.0"
@@ -14,6 +26,9 @@ default-run = "homeborismygitslovo"
 name = "homeborismygitslovo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[lints]
+workspace = true
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -22,6 +37,7 @@ arboard = "3"
 cpal = "0.15"
 enigo = { version = "0.2", default-features = false, features = ["x11rb"] }
 hound = "3"
+num-traits = "0.2"
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
