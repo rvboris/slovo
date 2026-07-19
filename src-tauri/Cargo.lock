@@ -1784,20 +1784,17 @@ dependencies = [
  "async-trait",
  "cpal",
  "enigo",
- "evdev",
  "futures-util",
  "hound",
- "libc",
- "polling",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
+ "slovo-shortcut-core",
  "tauri",
  "tauri-build",
  "tauri-plugin-global-shortcut",
  "tauri-plugin-single-instance",
  "tokio",
- "udev",
  "url",
  "zbus",
 ]
@@ -3838,6 +3835,25 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slovo-input-helper"
+version = "0.1.0"
+dependencies = [
+ "evdev",
+ "libc",
+ "polling",
+ "slovo-shortcut-core",
+ "udev",
+]
+
+[[package]]
+name = "slovo-shortcut-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "smallvec"

@@ -3,9 +3,9 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use super::chord::ShortcutChord;
-use super::matcher::{ChordSpec, MatchEvent, MatchState, Matcher};
-use super::protocol::{
+use slovo_shortcut_core::chord::ShortcutChord;
+use slovo_shortcut_core::matcher::{ChordSpec, MatchEvent, MatchState, Matcher};
+use slovo_shortcut_core::protocol::{
     decode_parent_line, encode_helper_line, read_bounded_line, EventState, HelperMessage,
     ParentCommand, ProtocolError, MAX_LINE_BYTES, PROTOCOL_VERSION,
 };
@@ -365,19 +365,19 @@ mod tests {
         state.configure(1, 7, "Ctrl+Space", 2, &mut output).unwrap();
         state.matcher.input(
             1,
-            super::super::matcher::InputCode::CtrlLeft,
-            super::super::matcher::InputValue::Down,
+            slovo_shortcut_core::matcher::InputCode::CtrlLeft,
+            slovo_shortcut_core::matcher::InputValue::Down,
         );
         state.matcher.input(
             1,
-            super::super::matcher::InputCode::Primary(57),
-            super::super::matcher::InputValue::Down,
+            slovo_shortcut_core::matcher::InputCode::Primary(57),
+            slovo_shortcut_core::matcher::InputValue::Down,
         );
         output.clear();
         state.configure(2, 8, "Alt+KeyA", 2, &mut output).unwrap();
         let messages = output
             .split_inclusive(|byte| *byte == b'\n')
-            .map(|line| super::super::protocol::decode_helper_line(line).unwrap())
+            .map(|line| slovo_shortcut_core::protocol::decode_helper_line(line).unwrap())
             .collect::<Vec<_>>();
         assert!(matches!(
             messages[0],

@@ -164,23 +164,20 @@ function cargoBuild({ debug, target }) {
   // TAURI_ENV_TARGET_TRIPLE cannot silently change where the artifact lands.
   // cargo has no --debug flag; debug is the default and release is opt-in via
   // --release.
-  const args = ["build", "--bin", CARGO_BIN_NAME];
+  const args = [
+    "build",
+    "-p",
+    "slovo-input-helper",
+    "--manifest-path",
+    join(SRC_TAURI_DIR, "Cargo.toml"),
+  ];
   if (!debug) args.push("--release");
   args.push("--target", target);
   info(`cargo ${args.join(" ")}  (cwd: ${SRC_TAURI_DIR})`);
-  // SLOVO_BUILDING_HELPER=1 tells src-tauri/build.rs to SKIP tauri_build::build().
-  // Otherwise tauri_build merges tauri.linux.conf.json, sees bundle.externalBin,
-  // and hard-fails validating binaries/slovo-input-helper-<triple> — which is
-  // exactly the artifact we are producing (circular). This env is set ONLY for
-  // this helper-only cargo invocation and never leaks into normal app builds.
-  const childEnv = {
-    ...process.env,
-    SLOVO_BUILDING_HELPER: "1",
-  };
   // Run cargo from src-tauri. spawnSync with arg vector — no shell interpolation.
   const result = spawnSync("cargo", args, {
     cwd: SRC_TAURI_DIR,
-    env: childEnv,
+    env: process.env,
     stdio: "inherit",
   });
   if (result.error) fatal(`Failed to spawn cargo: ${result.error.message}`);

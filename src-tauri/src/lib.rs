@@ -325,9 +325,8 @@ fn get_shortcut_permission_setup(app: AppHandle) -> Result<ShortcutPermissionSet
             log_permission_setup_message(&detail);
             detail
         })?;
-        let setup = permission_setup_in_directory(&directory).map_err(|detail| {
-            log_permission_setup_message(&detail);
-            detail
+        let setup = permission_setup_in_directory(&directory).inspect_err(|detail| {
+            log_permission_setup_message(detail);
         })?;
         if let Some(path) = setup.prepared_rule_path.as_deref() {
             log_permission_setup_message(&format!("prepared rule at {path}"));
@@ -833,12 +832,10 @@ pub fn run() {
             ) {
                 set_shortcut_status(app, ShortcutBackendStatus::ShuttingDown);
                 if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(result) =
+                    if let Ok(Err(error)) =
                         with_shortcut_manager(&state, |manager| manager.shutdown(app))
                     {
-                        if let Err(error) = result {
-                            eprintln!("[slovo] shortcut shutdown failed: {error}");
-                        }
+                        eprintln!("[slovo] shortcut shutdown failed: {error}");
                     }
                 }
             }

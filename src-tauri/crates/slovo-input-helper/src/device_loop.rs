@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 use evdev::{Device, EventSummary, KeyCode};
 use polling::{Event, Events, PollMode, Poller};
 
-use super::super::matcher::{DeviceId, InputCode, InputValue, MatchEvent, Matcher};
+use slovo_shortcut_core::matcher::{DeviceId, InputCode, InputValue, MatchEvent, Matcher};
 
 const RESCAN_INTERVAL: Duration = Duration::from_secs(5);
 const DEVICE_KEY_BASE: usize = 2;

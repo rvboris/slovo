@@ -1,21 +1,9 @@
-pub mod chord;
-#[cfg(target_os = "linux")]
-pub mod helper;
-pub mod matcher;
 mod native;
-pub mod protocol;
 #[cfg(target_os = "linux")]
 mod wayland;
 
-pub use chord::{ShortcutChord, ShortcutError, ShortcutKey, ShortcutModifier};
-pub use matcher::{
-    ChordSpec, DeviceId, InputCode, InputValue, MatchEvent, MatchState, Matcher, Modifiers,
-};
 pub use native::NativeShortcutBackend;
-pub use protocol::{
-    decode_helper_line, decode_parent_line, encode_helper_line, encode_parent_line, EventState,
-    HelperMessage, ParentCommand, ProtocolError, MAX_LINE_BYTES, PROTOCOL_VERSION,
-};
+pub use slovo_shortcut_core::chord::{ShortcutChord, ShortcutError};
 
 /// Shortcut implementation selected by the runtime environment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -99,7 +87,7 @@ pub fn detect_linux_session(
 pub enum ShortcutManager {
     Native(NativeShortcutBackend),
     #[cfg(target_os = "linux")]
-    Wayland(wayland::WaylandSupervisor),
+    Wayland(Box<wayland::WaylandSupervisor>),
     LegacyPortal,
 }
 
@@ -110,7 +98,9 @@ impl ShortcutManager {
 
     #[cfg(target_os = "linux")]
     pub fn wayland(app: tauri::AppHandle) -> Result<Self, ShortcutError> {
-        wayland::WaylandSupervisor::spawn(app).map(Self::Wayland)
+        wayland::WaylandSupervisor::spawn(app)
+            .map(Box::new)
+            .map(Self::Wayland)
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -130,15 +120,6 @@ impl ShortcutManager {
             #[cfg(target_os = "linux")]
             Self::Wayland(_) => BackendKind::WaylandHelper,
             Self::LegacyPortal => BackendKind::LegacyPortal,
-        }
-    }
-
-    pub fn active_chord(&self) -> Option<&ShortcutChord> {
-        match self {
-            Self::Native(backend) => backend.active_chord(),
-            #[cfg(target_os = "linux")]
-            Self::Wayland(backend) => backend.active_chord(),
-            Self::LegacyPortal => None,
         }
     }
 

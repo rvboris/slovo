@@ -1,7 +1,14 @@
 use tauri::AppHandle;
-use tauri_plugin_global_shortcut::GlobalShortcutExt;
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
-use super::{BackendKind, ShortcutChord, ShortcutError};
+use super::{ShortcutChord, ShortcutError};
+
+fn to_tauri_shortcut(chord: &ShortcutChord) -> Result<Shortcut, ShortcutError> {
+    chord
+        .to_string()
+        .parse::<Shortcut>()
+        .map_err(|error| ShortcutError::Tauri(error.to_string()))
+}
 
 /// `tauri-plugin-global-shortcut` based shortcut registration.
 ///
@@ -18,10 +25,6 @@ impl NativeShortcutBackend {
         Self::default()
     }
 
-    pub const fn kind(&self) -> BackendKind {
-        BackendKind::Native
-    }
-
     pub fn active_chord(&self) -> Option<&ShortcutChord> {
         self.active.as_ref()
     }
@@ -34,7 +37,7 @@ impl NativeShortcutBackend {
             return self.replace(app, chord);
         }
 
-        let shortcut = chord.to_tauri_shortcut()?;
+        let shortcut = to_tauri_shortcut(&chord)?;
         app.global_shortcut().register(shortcut).map_err(|error| {
             ShortcutError::Backend(format!("cannot register shortcut {chord}: {error}"))
         })?;
@@ -50,8 +53,8 @@ impl NativeShortcutBackend {
             return Ok(());
         }
 
-        let old_shortcut = old_chord.to_tauri_shortcut()?;
-        let new_shortcut = chord.to_tauri_shortcut()?;
+        let old_shortcut = to_tauri_shortcut(old_chord)?;
+        let new_shortcut = to_tauri_shortcut(&chord)?;
         app.global_shortcut()
             .register(new_shortcut)
             .map_err(|error| {
@@ -77,7 +80,7 @@ impl NativeShortcutBackend {
         let Some(chord) = self.active.as_ref() else {
             return Ok(());
         };
-        let shortcut = chord.to_tauri_shortcut()?;
+        let shortcut = to_tauri_shortcut(chord)?;
         app.global_shortcut()
             .unregister(shortcut)
             .map_err(|error| {
@@ -95,7 +98,6 @@ mod tests {
     #[test]
     fn starts_without_an_active_chord() {
         let backend = NativeShortcutBackend::new();
-        assert_eq!(backend.kind(), BackendKind::Native);
         assert_eq!(backend.active_chord(), None);
     }
 }

@@ -1,0 +1,13 @@
+[package]
+name = "slovo-input-helper"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+slovo-shortcut-core = { path = "../slovo-shortcut-core" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+evdev = { version = "0.13.2", default-features = false }
+udev = { version = "0.9.3", default-features = false }
+polling = "3.11.0"
+libc = "0.2"
