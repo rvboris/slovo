@@ -121,7 +121,7 @@ const shortcutStatusText = requiredElement<HTMLElement>("#shortcut-status-text")
 const shortcutStatusMark = requiredElement<HTMLElement>("#shortcut-status-mark");
 const shortcutRetry = requiredElement<HTMLButtonElement>("#shortcut-retry");
 const shortcutSetup = requiredElement<HTMLButtonElement>("#shortcut-setup");
-const permissionDialog = requiredElement<HTMLDialogElement>("#permission-dialog");
+const permissionDialog = requiredElement<HTMLElement>("#permission-dialog");
 const permissionDialogContent = requiredElement<HTMLElement>("#permission-dialog-content");
 const permissionDialogLoading = requiredElement<HTMLElement>("#permission-dialog-loading");
 const permissionDialogState = requiredElement<HTMLElement>("#permission-dialog-state");
@@ -465,7 +465,7 @@ function renderShortcutStatus(payload: ShortcutBackendStatusPayload): void {
   permissionSetupAllowed = canSetup;
   shortcutRetry.hidden = !canRetry;
   shortcutSetup.hidden = !canSetup;
-  if (!canSetup && permissionDialog.open) {
+  if (!canSetup && !permissionDialog.hidden) {
     closePermissionDialog();
   }
   shortcutStatus.setAttribute(
@@ -613,29 +613,17 @@ async function loadPermissionSetup(): Promise<void> {
 
 function openPermissionDialog(): void {
   if (!permissionSetupAllowed || shortcutSetup.hidden) return;
+  lastFocusedBeforeDialog = document.activeElement as HTMLElement | null;
   permissionDialog.hidden = false;
-  if (typeof permissionDialog.showModal === "function") {
-    if (!permissionDialog.open) {
-      lastFocusedBeforeDialog = document.activeElement as HTMLElement | null;
-      permissionDialog.showModal();
-    }
-  } else {
-    lastFocusedBeforeDialog = document.activeElement as HTMLElement | null;
-    permissionDialog.setAttribute("open", "");
-    permissionDialog.hidden = false;
-  }
   permissionAck.checked = false;
   updateInstallAckGate();
   void loadPermissionSetup();
+  permissionDialog.scrollIntoView({ behavior: "smooth", block: "start" });
   const focusTarget = permissionDialogClose as HTMLElement;
   window.setTimeout(() => focusTarget.focus(), 0);
 }
 
 function closePermissionDialog(): void {
-  if (typeof permissionDialog.close === "function" && permissionDialog.open) {
-    permissionDialog.close();
-  }
-  permissionDialog.removeAttribute("open");
   permissionDialog.hidden = true;
   lastPermissionSetup = null;
   permissionAck.checked = false;
@@ -833,17 +821,6 @@ shortcutSetup.addEventListener("click", openPermissionDialog);
 
 permissionDialogClose.addEventListener("click", closePermissionDialog);
 permissionCancel.addEventListener("click", closePermissionDialog);
-
-permissionDialog.addEventListener("click", (event) => {
-  if (event.target === permissionDialog) {
-    closePermissionDialog();
-  }
-});
-
-permissionDialog.addEventListener("cancel", (event) => {
-  event.preventDefault();
-  closePermissionDialog();
-});
 
 permissionAck.addEventListener("change", updateInstallAckGate);
 
