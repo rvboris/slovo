@@ -36,10 +36,9 @@ pub fn run() -> Result<(), String> {
     report_scan_diagnostic(&initial);
 
     loop {
-        // Backup parent-death detection: PR_SET_PDEATHSIG is the primary
-        // mechanism, but if a subreaper has reparented us to init (pid 1)
-        // without delivering SIGTERM, we still exit cleanly here. Stdin EOF
-        // remains the primary cooperative shutdown signal.
+        // Parent-death detection: if the parent has been reparented to init
+        // (pid 1) we exit cleanly.  Stdin EOF remains the primary cooperative
+        // shutdown signal; this poll is the backup.
         if unsafe { libc::getppid() } != parent_pid {
             return Ok(());
         }
@@ -92,23 +91,24 @@ pub fn run() -> Result<(), String> {
 // against another process already running as the same user.
 //
 // Lifetime is guarded by two complementary mechanisms:
-//   1. PR_SET_PDEATHSIG (primary): the kernel delivers SIGTERM to this process
-//      when its parent dies. prctl(2) documents this as triggering on parent
-//      *process* termination, and we install it at the very start of run()
-//      before any threads are spawned, so the signal target is well-defined.
-//   2. getppid() poll (backup): the main loop below still checks whether the
-//      parent has been reparented to init (pid 1) and exits cleanly. This is a
-//      defense-in-depth in case PDEATHSIG delivery is suppressed (e.g. by a
-//      subreaper).
-// Stdin EOF remains the primary cooperative shutdown signal.
+//   1. Stdin EOF (primary): the parent closes stdin, and the command reader
+//      thread sends `ReaderMessage::Closed`, which terminates the main loop.
+//   2. getppid() poll (backup): the main loop checks whether the parent has
+//      been reparented to init (pid 1) and exits cleanly. This covers the case
+//      where the parent crashes without closing stdin explicitly.
+//
+// A kernel parent-death signal is deliberately NOT used. The helper may be
+// spawned from a temporary thread (e.g. `slovo-shortcut-retry`), and on Linux
+// that signal fires on the death of the *creating thread*, not the process.
+// When that short-lived thread exits, the kernel delivers the signal and kills
+// the helper seconds after it starts. The combination of stdin EOF and getppid
+// polling already provides reliable lifetime tracking without this pitfall.
+//
+// PR_SET_NO_NEW_PRIVS is retained: it is a one-way security hardening flag
+// that prevents privilege escalation and has no interaction with thread
+// lifetime.
 fn harden_process() -> Result<(), String> {
     unsafe {
-        if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) != 0 {
-            return Err(format!(
-                "cannot set parent-death signal: {}",
-                io::Error::last_os_error()
-            ));
-        }
         if libc::prctl(
             libc::PR_SET_NO_NEW_PRIVS,
             libc::c_ulong::from(1u32),

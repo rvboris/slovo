@@ -123,6 +123,15 @@ fn spawn_helper_process(
     Ok((child, input, output, stderr))
 }
 
+fn deliver_failure_before_status(
+    sender: &mpsc::Sender<Result<HelperMessage, String>>,
+    detail: &str,
+    publish_status: impl FnOnce(),
+) {
+    let _ = sender.send(Err(detail.to_owned()));
+    publish_status();
+}
+
 fn spawn_protocol_reader(
     output: std::process::ChildStdout,
     sender: mpsc::Sender<Result<HelperMessage, String>>,
@@ -140,17 +149,22 @@ fn spawn_protocol_reader(
                 match read_helper_record(&mut reader) {
                     HelperRecord::Eof => {
                         let detail = "helper closed protocol output".to_owned();
-                        set_shared_status_if_current(
-                            &app,
-                            &status,
-                            &supervisor_generation,
-                            identity,
-                            ShortcutBackendStatus::Failed {
-                                backend: BackendKind::WaylandHelper,
-                                detail: detail.clone(),
-                            },
-                        );
-                        let _ = sender.send(Err(detail));
+                        // Unblock any command waiter before best-effort status
+                        // publication. Publishing may need AppState locks held
+                        // by the waiter itself; channel delivery must never
+                        // depend on those locks.
+                        deliver_failure_before_status(&sender, &detail, || {
+                            set_shared_status_if_current(
+                                &app,
+                                &status,
+                                &supervisor_generation,
+                                identity,
+                                ShortcutBackendStatus::Failed {
+                                    backend: BackendKind::WaylandHelper,
+                                    detail: detail.clone(),
+                                },
+                            );
+                        });
                         synthesize_release(&app, &filter);
                         break;
                     }
@@ -169,17 +183,18 @@ fn spawn_protocol_reader(
                     }
                     HelperRecord::Message(message @ HelperMessage::Error { .. }) => {
                         let detail = format!("helper protocol error: {message:?}");
-                        set_shared_status_if_current(
-                            &app,
-                            &status,
-                            &supervisor_generation,
-                            identity,
-                            ShortcutBackendStatus::Failed {
-                                backend: BackendKind::WaylandHelper,
-                                detail: detail.clone(),
-                            },
-                        );
-                        let _ = sender.send(Err(detail));
+                        deliver_failure_before_status(&sender, &detail, || {
+                            set_shared_status_if_current(
+                                &app,
+                                &status,
+                                &supervisor_generation,
+                                identity,
+                                ShortcutBackendStatus::Failed {
+                                    backend: BackendKind::WaylandHelper,
+                                    detail: detail.clone(),
+                                },
+                            );
+                        });
                         synthesize_release(&app, &filter);
                         break;
                     }
@@ -190,17 +205,18 @@ fn spawn_protocol_reader(
                     }
                     HelperRecord::Invalid => {
                         let detail = "helper emitted malformed protocol".to_owned();
-                        set_shared_status_if_current(
-                            &app,
-                            &status,
-                            &supervisor_generation,
-                            identity,
-                            ShortcutBackendStatus::Failed {
-                                backend: BackendKind::WaylandHelper,
-                                detail: detail.clone(),
-                            },
-                        );
-                        let _ = sender.send(Err(detail));
+                        deliver_failure_before_status(&sender, &detail, || {
+                            set_shared_status_if_current(
+                                &app,
+                                &status,
+                                &supervisor_generation,
+                                identity,
+                                ShortcutBackendStatus::Failed {
+                                    backend: BackendKind::WaylandHelper,
+                                    detail: detail.clone(),
+                                },
+                            );
+                        });
                         synthesize_release(&app, &filter);
                         break;
                     }
@@ -824,6 +840,27 @@ mod tests {
                 HotkeyEvent::Pressed
             ]
         );
+    }
+
+    #[test]
+    fn protocol_failure_reaches_waiter_before_status_publication() {
+        let (sender, receiver) = mpsc::channel();
+        let status_lock = Mutex::new(());
+        let status_guard = status_lock.lock().unwrap();
+
+        thread::scope(|scope| {
+            scope.spawn(|| {
+                deliver_failure_before_status(&sender, "helper failed", || {
+                    let _status_guard = status_lock.lock().unwrap();
+                });
+            });
+
+            assert!(matches!(
+                receiver.recv_timeout(Duration::from_millis(100)),
+                Ok(Err(detail)) if detail == "helper failed"
+            ));
+            drop(status_guard);
+        });
     }
 
     #[test]

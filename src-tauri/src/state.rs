@@ -187,28 +187,79 @@ fn hide_recording_overlay(window: &WebviewWindow) -> Result<(), String> {
         .map_err(|error| format!("cannot hide recording overlay: {error}"))
 }
 
+/// RAII guard that restores the [`ShortcutManager`] into [`ShortcutRuntime`]
+/// when dropped.  This prevents the manager from being permanently lost if the
+/// operation panics or returns early.
+struct ManagerGuard<'a> {
+    shortcut: &'a Mutex<ShortcutRuntime>,
+    manager: Option<ShortcutManager>,
+}
+
+impl ManagerGuard<'_> {
+    /// Returns a mutable reference to the extracted manager.
+    fn manager_mut(&mut self) -> &mut ShortcutManager {
+        self.manager
+            .as_mut()
+            .expect("ManagerGuard manager consumed before drop")
+    }
+}
+
+impl Drop for ManagerGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(manager) = self.manager.take() {
+            // Best-effort restore; if the mutex is poisoned the manager is
+            // abandoned, but that state already implies an unrecoverable panic.
+            if let Ok(mut runtime) = self.shortcut.lock() {
+                runtime.status = manager.status();
+                runtime.manager = Some(manager);
+            }
+        }
+    }
+}
+
 /// Runs `operation` against the live [`ShortcutManager`] while guaranteeing
-/// that a re-entrant helper call cannot deadlock on the manager lock.
+/// that neither `set_shared_status` (called by Wayland helper methods) nor the
+/// protocol reader thread can deadlock on `state.shortcut`.
 ///
-/// Lock order: `shortcut_operations` is acquired BEFORE `shortcut` (see the
-/// [`AppState`] comment) so a re-entrant helper call sees the manager as busy
-/// and returns an error instead of blocking.
+/// # Design
+///
+/// The manager is **taken** out of [`ShortcutRuntime`] under `shortcut` lock,
+/// after which the lock is dropped.  The operation then runs free of the
+/// `shortcut` mutex — so any internal status publication
+/// (`set_shared_status`) or channel wait (`wait_for`) cannot cause a
+/// self-deadlock or circular wait with the reader thread.
+///
+/// A [`ManagerGuard`] restores the manager and refreshes the cached status on
+/// drop (including on panic/early-return), so readers always see a consistent
+/// runtime.
+///
+/// `shortcut_operations` is still acquired first as a serialization primitive,
+/// ensuring a second caller cannot observe the temporarily empty manager slot.
 pub(crate) fn with_shortcut_manager<T>(
     state: &AppState,
     operation: impl FnOnce(&mut ShortcutManager) -> T,
 ) -> Result<T, String> {
-    let _operation = state
-        .shortcut_operations
+    with_extracted_shortcut_manager(&state.shortcut, &state.shortcut_operations, operation)
+}
+
+fn with_extracted_shortcut_manager<T>(
+    shortcut: &Mutex<ShortcutRuntime>,
+    shortcut_operations: &Mutex<()>,
+    operation: impl FnOnce(&mut ShortcutManager) -> T,
+) -> Result<T, String> {
+    let _operation = shortcut_operations
         .lock()
         .map_err(|_| "shortcut operation lock poisoned")?;
-    let mut shortcut = state
-        .shortcut
-        .lock()
-        .map_err(|_| "shortcut lock poisoned")?;
-    let mut manager = shortcut.manager.take().ok_or("shortcut manager is busy")?;
-    let result = operation(&mut manager);
-    shortcut.manager = Some(manager);
-    drop(shortcut);
+    let mut runtime = shortcut.lock().map_err(|_| "shortcut lock poisoned")?;
+    let manager = runtime.manager.take().ok_or("shortcut manager is busy")?;
+    drop(runtime);
+    // The operation runs without holding `shortcut`.
+    let mut guard = ManagerGuard {
+        shortcut,
+        manager: Some(manager),
+    };
+    let result = operation(guard.manager_mut());
+    // ManagerGuard::drop restores the manager and updates the cached status.
     Ok(result)
 }
 
@@ -217,4 +268,58 @@ pub(crate) fn set_shortcut_status(app: &AppHandle, status: ShortcutBackendStatus
         shortcut.status = status.clone();
     }
     let _ = app.emit("slovo://shortcut-status", status);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn shortcut_runtime() -> Mutex<ShortcutRuntime> {
+        Mutex::new(ShortcutRuntime {
+            manager: Some(ShortcutManager::native()),
+            status: ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native,
+            },
+        })
+    }
+
+    #[test]
+    fn manager_operation_releases_shortcut_lock_and_restores_manager_on_ok() {
+        let shortcut = shortcut_runtime();
+        let operations = Mutex::new(());
+
+        let result = with_extracted_shortcut_manager(&shortcut, &operations, |_| {
+            // Models WaylandSupervisor::set_status publishing into AppState
+            // while replace/retry owns the extracted manager.
+            let mut runtime = shortcut
+                .try_lock()
+                .expect("operation must not hold shortcut lock");
+            runtime.status = ShortcutBackendStatus::Restarting {
+                backend: crate::shortcut::BackendKind::Native,
+            };
+            drop(runtime);
+            Ok::<_, &'static str>(())
+        })
+        .expect("state operation should run");
+
+        assert_eq!(result, Ok(()));
+        assert!(shortcut.lock().unwrap().manager.is_some());
+    }
+
+    #[test]
+    fn manager_operation_releases_shortcut_lock_and_restores_manager_on_err() {
+        let shortcut = shortcut_runtime();
+        let operations = Mutex::new(());
+
+        let result = with_extracted_shortcut_manager(&shortcut, &operations, |_| {
+            let _runtime = shortcut
+                .try_lock()
+                .expect("operation must not hold shortcut lock");
+            Err::<(), _>("operation failed")
+        })
+        .expect("state operation should run");
+
+        assert_eq!(result, Err("operation failed"));
+        assert!(shortcut.lock().unwrap().manager.is_some());
+    }
 }
