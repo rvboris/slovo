@@ -1,6 +1,5 @@
 //! Application entrypoint: tray menu, plugin wiring, and the run loop.
 
-use crate::commands::get_shortcut_backend_status;
 use crate::hotkey::{canonicalize_hotkey, handle_shortcut, parse_hotkey, show_settings};
 use crate::portal;
 use crate::settings;
@@ -8,7 +7,10 @@ use crate::shortcut::{
     detect_linux_session, BackendKind, LinuxSession, ShortcutBackendStatus, ShortcutChord,
     ShortcutManager,
 };
-use crate::state::{set_shortcut_status, with_shortcut_manager, AppState};
+use crate::state::{
+    initialize_shortcut_manager, set_shortcut_status, shutdown_shortcut_manager, AppState,
+};
+use std::sync::atomic::Ordering;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager};
@@ -66,31 +68,90 @@ pub fn run() {
             #[cfg(not(target_os = "linux"))]
             let session = LinuxSession::X11;
             let helper_enabled = std::env::var("SLOVO_EVDEV_HOTKEYS").as_deref() == Ok("1");
-            let mut manager = if session == LinuxSession::Wayland && helper_enabled {
-                eprintln!("[slovo] setup: creating Wayland shortcut manager");
-                let m = ShortcutManager::wayland(app.handle().clone())?;
-                eprintln!("[slovo] setup: Wayland manager created successfully");
-                m
-            } else if session == LinuxSession::Wayland {
-                ShortcutManager::legacy_portal()
+            let async_wayland = session == LinuxSession::Wayland && helper_enabled;
+            let (manager, shortcut_status) = if async_wayland {
+                (
+                    None,
+                    ShortcutBackendStatus::Starting {
+                        backend: BackendKind::WaylandHelper,
+                    },
+                )
             } else {
-                ShortcutManager::native()
+                let mut manager = if session == LinuxSession::Wayland {
+                    ShortcutManager::legacy_portal()
+                } else {
+                    ShortcutManager::native()
+                };
+                if manager.kind() != BackendKind::LegacyPortal {
+                    let chord = registered_hotkey
+                        .parse::<ShortcutChord>()
+                        .map_err(|error| error.to_string())?;
+                    manager
+                        .replace(app.handle(), chord)
+                        .map_err(|error| error.to_string())?;
+                }
+                let status = manager.status();
+                (Some(manager), status)
             };
-            if manager.kind() != BackendKind::LegacyPortal {
-                let chord = registered_hotkey
-                    .parse::<ShortcutChord>()
-                    .map_err(|error| error.to_string())?;
-                manager
-                    .replace(app.handle(), chord)
-                    .map_err(|error| error.to_string())?;
-            }
-            eprintln!("[slovo] setup: storing AppState with shortcut manager");
-            app.manage(AppState::new(settings.clone(), registered_hotkey, manager));
-            eprintln!("[slovo] setup: AppState stored");
-            if let Ok(status) = get_shortcut_backend_status(app.state::<AppState>()) {
-                set_shortcut_status(app.handle(), status);
-            }
+
+            app.manage(AppState::new(
+                settings.clone(),
+                registered_hotkey.clone(),
+                manager,
+                shortcut_status.clone(),
+            ));
+            set_shortcut_status(app.handle(), shortcut_status);
             setup_tray(app.handle())?;
+
+            if async_wayland {
+                let app_for_shortcut = app.handle().clone();
+                let hotkey = registered_hotkey.clone();
+                let spawn_result = std::thread::Builder::new()
+                    .name("slovo-wayland-shortcut-init".into())
+                    .spawn(move || {
+                        let state = app_for_shortcut.state::<AppState>();
+                        let result = initialize_shortcut_manager(
+                            &state,
+                            BackendKind::WaylandHelper,
+                            || {
+                                ShortcutManager::wayland(app_for_shortcut.clone())
+                                    .map_err(|e| e.to_string())
+                            },
+                            |manager| {
+                                let chord = hotkey
+                                    .parse::<ShortcutChord>()
+                                    .map_err(|error| error.to_string())?;
+                                manager
+                                    .replace(&app_for_shortcut, chord)
+                                    .map_err(|error| error.to_string())
+                            },
+                        );
+                        if !state.shortcut_stopping.load(Ordering::Acquire) {
+                            let status = state
+                                .shortcut
+                                .lock()
+                                .map(|runtime| runtime.status.clone())
+                                .unwrap_or(ShortcutBackendStatus::Failed {
+                                    backend: BackendKind::WaylandHelper,
+                                    detail: "shortcut lock poisoned".to_owned(),
+                                });
+                            set_shortcut_status(&app_for_shortcut, status);
+                            if let Err(error) = result {
+                                eprintln!(
+                                    "[slovo] Wayland shortcut initialization failed: {error}"
+                                );
+                            }
+                        }
+                    });
+                if let Err(error) = spawn_result {
+                    let status = ShortcutBackendStatus::Failed {
+                        backend: BackendKind::WaylandHelper,
+                        detail: format!("cannot start Wayland shortcut initialization: {error}"),
+                    };
+                    set_shortcut_status(app.handle(), status);
+                    eprintln!("[slovo] cannot start Wayland shortcut initialization: {error}");
+                }
+            }
 
             if session == LinuxSession::Wayland && !helper_enabled {
                 eprintln!("[slovo] session: wayland; starting legacy portal in background");
@@ -126,12 +187,26 @@ pub fn run() {
                 event,
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
             ) {
-                set_shortcut_status(app, ShortcutBackendStatus::ShuttingDown);
                 if let Some(state) = app.try_state::<AppState>() {
-                    if let Ok(Err(error)) =
-                        with_shortcut_manager(&state, |manager| manager.shutdown(app))
+                    // Publish lifecycle state before any status emission so a
+                    // detached initializer cannot publish after shutdown starts.
+                    state.shortcut_stopping.store(true, Ordering::Release);
+                    set_shortcut_status(app, ShortcutBackendStatus::ShuttingDown);
+                    let app_for_shutdown = app.clone();
+                    if let Err(error) = std::thread::Builder::new()
+                        .name("slovo-shortcut-shutdown".into())
+                        .spawn(move || {
+                            let state = app_for_shutdown.state::<AppState>();
+                            if let Err(error) = shutdown_shortcut_manager(&state, |manager| {
+                                manager
+                                    .shutdown(&app_for_shutdown)
+                                    .map_err(|error| error.to_string())
+                            }) {
+                                eprintln!("[slovo] shortcut shutdown failed: {error}");
+                            }
+                        })
                     {
-                        eprintln!("[slovo] shortcut shutdown failed: {error}");
+                        eprintln!("[slovo] cannot start shortcut shutdown: {error}");
                     }
                 }
             }

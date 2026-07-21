@@ -9,8 +9,11 @@ use crate::audio;
 use crate::hotkey::{canonicalize_hotkey, parse_hotkey};
 use crate::permissions::{permission_setup_in_directory, resolve_permission_setup_dir};
 use crate::settings::{self, Settings};
-use crate::shortcut::{BackendKind, ShortcutBackendStatus, ShortcutChord};
-use crate::state::{set_shortcut_status, with_shortcut_manager, AppState, StatusEvent};
+use crate::shortcut::{BackendKind, ShortcutBackendStatus, ShortcutChord, ShortcutManager};
+use crate::state::{
+    retry_or_initialize_shortcut_manager, set_shortcut_status, with_shortcut_manager, AppState,
+    StatusEvent,
+};
 use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
@@ -89,13 +92,37 @@ pub fn retry_shortcut_backend(app: AppHandle) -> Result<ShortcutBackendStatus, S
         .name("slovo-shortcut-retry".into())
         .spawn(move || {
             let state = app_for_retry.state::<AppState>();
-            let result = with_shortcut_manager(&state, |manager| {
-                manager
-                    .retry(&app_for_retry)
-                    .map(|()| manager.status())
-                    .map_err(|error| error.to_string())
-            })
-            .and_then(|result| result);
+            let hotkey = state
+                .settings
+                .lock()
+                .map(|runtime| runtime.registered_hotkey.clone())
+                .map_err(|_| "settings lock poisoned".to_owned());
+            let result = hotkey.and_then(|hotkey| {
+                retry_or_initialize_shortcut_manager(
+                    &state,
+                    BackendKind::WaylandHelper,
+                    |manager| manager.retry(&app_for_retry).map_err(|e| e.to_string()),
+                    || ShortcutManager::wayland(app_for_retry.clone()).map_err(|e| e.to_string()),
+                    |manager| {
+                        let chord = hotkey
+                            .parse::<ShortcutChord>()
+                            .map_err(|error| error.to_string())?;
+                        manager
+                            .replace(&app_for_retry, chord)
+                            .map_err(|e| e.to_string())
+                    },
+                )
+            });
+
+            let status = state
+                .shortcut
+                .lock()
+                .map(|runtime| runtime.status.clone())
+                .unwrap_or_else(|_| ShortcutBackendStatus::Failed {
+                    backend: BackendKind::WaylandHelper,
+                    detail: "shortcut lock poisoned".to_owned(),
+                });
+            set_shortcut_status(&app_for_retry, status);
             let _ = sender.send(result);
         })
         .map_err(|error| format!("cannot start shortcut retry: {error}"))?;

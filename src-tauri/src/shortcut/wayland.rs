@@ -424,6 +424,17 @@ impl WaylandSupervisor {
         Ok(())
     }
 
+    /// Prevents this supervisor's reader from publishing any further status.
+    /// This is used when initialization abandons a fully constructed manager.
+    pub fn invalidate(&self) {
+        let _ = self.supervisor_generation.compare_exchange(
+            self.identity,
+            self.identity.saturating_add(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        );
+    }
+
     pub fn shutdown(&mut self) -> Result<(), ShortcutError> {
         if self.reaped {
             return Ok(());
@@ -520,6 +531,7 @@ impl WaylandSupervisor {
 
 impl Drop for WaylandSupervisor {
     fn drop(&mut self) {
+        self.invalidate();
         if self.reaped {
             return;
         }
@@ -571,6 +583,7 @@ fn set_shared_status(
     if let Some(state) = app.try_state::<crate::AppState>() {
         if let Ok(mut shortcut) = state.shortcut.lock() {
             shortcut.status = status.clone();
+            shortcut.status_revision = shortcut.status_revision.wrapping_add(1);
         }
     }
     let _ = app.emit("slovo://shortcut-status", status);

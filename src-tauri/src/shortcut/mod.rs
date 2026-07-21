@@ -169,6 +169,13 @@ impl ShortcutManager {
         }
     }
 
+    pub fn invalidate(&self) {
+        #[cfg(target_os = "linux")]
+        if let Self::Wayland(backend) = self {
+            backend.invalidate();
+        }
+    }
+
     pub fn shutdown(&mut self, app: &tauri::AppHandle) -> Result<(), ShortcutError> {
         match self {
             Self::Native(backend) => backend.shutdown(app),

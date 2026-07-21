@@ -109,6 +109,7 @@ export function useShortcutStatus({
     isBusy: false,
   });
   const retryPendingRef = useRef(false);
+  const eventRevisionRef = useRef(0);
 
   const renderStatus = useCallback(
     (payload: ShortcutBackendStatusPayload) => {
@@ -141,13 +142,18 @@ export function useShortcutStatus({
   }, [renderStatus, onError, onClearError]);
 
   const loadShortcutStatus = useCallback(async (): Promise<void> => {
+    // A shortcut-status event received while this request is in flight is
+    // newer than the response, so the response must not overwrite it.
+    const requestRevision = eventRevisionRef.current;
     try {
       const result = await invoke<ShortcutBackendStatusPayload>(
         "get_shortcut_backend_status",
       );
-      renderStatus(result);
+      if (eventRevisionRef.current === requestRevision) renderStatus(result);
     } catch (error) {
-      renderStatus({ state: "failed", detail: "" });
+      if (eventRevisionRef.current === requestRevision) {
+        renderStatus({ state: "failed", detail: "" });
+      }
       onError(
         getErrorMessage(error, "Не удалось получить состояние сочетания."),
         loadShortcutStatus,
@@ -162,7 +168,10 @@ export function useShortcutStatus({
     listen<ShortcutBackendStatusPayload>(
       "slovo://shortcut-status",
       ({ payload }) => {
-        if (!cancelled) renderStatus(payload);
+        if (!cancelled) {
+          eventRevisionRef.current += 1;
+          renderStatus(payload);
+        }
       },
     )
       .then((fn) => {

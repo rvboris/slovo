@@ -11,6 +11,7 @@ use crate::settings::Settings;
 use crate::shortcut::{ShortcutBackendStatus, ShortcutManager};
 use crate::trigger::TriggerState;
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position, WebviewWindow};
@@ -27,13 +28,15 @@ pub(crate) struct SettingsRuntime {
 
 /// Consolidated shortcut backend runtime.
 ///
-/// `manager` and `status` describe the same subsystem and are mutated
-/// together (every manager operation refreshes the status). The optional
-/// `manager` is `take`n during a blocking helper operation and restored
-/// afterwards; `status` always reflects the latest known state.
+/// `manager` and `status` describe the same subsystem. `manager` is absent
+/// while asynchronous Wayland initialization has not succeeded, and is also
+/// temporarily `take`n during a serialized blocking operation. `status` remains
+/// available in both cases and reflects the latest authoritative publication.
 pub(crate) struct ShortcutRuntime {
     pub(crate) manager: Option<ShortcutManager>,
     pub(crate) status: ShortcutBackendStatus,
+    /// Increments whenever a backend publishes status through the shared state.
+    pub(crate) status_revision: u64,
 }
 
 /// Aggregate application state.
@@ -50,9 +53,11 @@ pub(crate) struct ShortcutRuntime {
 ///   6. `status`
 ///
 /// `shortcut_operations` is a plain `Mutex<()>` used purely as a serialization
-/// primitive: it is held for the whole duration of a blocking helper mutation
-/// so a re-entrant caller sees the manager as busy instead of deadlocking. It
-/// must be acquired BEFORE `shortcut` whenever both are needed.
+/// primitive. Initialization, retry, replace, and shutdown manager mutations
+/// hold it for their full duration. It must be acquired BEFORE `shortcut`
+/// whenever both are needed; blocking helper IPC never holds `shortcut`.
+/// `shortcut_stopping` is lock-free lifecycle state and may be checked at any
+/// point, including while an operation owns `shortcut_operations`.
 pub struct AppState {
     pub(crate) settings: Mutex<SettingsRuntime>,
     pub(crate) trigger: Mutex<TriggerState>,
@@ -60,6 +65,7 @@ pub struct AppState {
     pub(crate) recording: Mutex<Option<Instant>>,
     pub(crate) shortcut: Mutex<ShortcutRuntime>,
     pub(crate) shortcut_operations: Mutex<()>,
+    pub(crate) shortcut_stopping: AtomicBool,
     pub(crate) portal: Mutex<Option<portal::PortalController>>,
     pub(crate) status: Mutex<StatusEvent>,
 }
@@ -68,9 +74,9 @@ impl AppState {
     pub(crate) fn new(
         settings: Settings,
         registered_hotkey: String,
-        shortcut_manager: ShortcutManager,
+        shortcut_manager: Option<ShortcutManager>,
+        shortcut_status: ShortcutBackendStatus,
     ) -> Self {
-        let shortcut_status = shortcut_manager.status();
         Self {
             settings: Mutex::new(SettingsRuntime {
                 settings,
@@ -80,10 +86,12 @@ impl AppState {
             audio: AudioController::new(),
             recording: Mutex::new(None),
             shortcut: Mutex::new(ShortcutRuntime {
-                manager: Some(shortcut_manager),
+                manager: shortcut_manager,
                 status: shortcut_status,
+                status_revision: 0,
             }),
             shortcut_operations: Mutex::new(()),
+            shortcut_stopping: AtomicBool::new(false),
             portal: Mutex::new(None),
             status: Mutex::new(StatusEvent {
                 kind: StatusKind::Ready,
@@ -242,6 +250,189 @@ pub(crate) fn with_shortcut_manager<T>(
     with_extracted_shortcut_manager(&state.shortcut, &state.shortcut_operations, operation)
 }
 
+/// Constructs, configures, and installs a missing manager as one serialized
+/// operation. Construction and configuration run without the `shortcut` lock,
+/// because the Wayland helper publishes status through that same mutex.
+pub(crate) fn initialize_shortcut_manager(
+    state: &AppState,
+    backend: crate::shortcut::BackendKind,
+    construct: impl FnOnce() -> Result<ShortcutManager, String>,
+    configure: impl FnOnce(&mut ShortcutManager) -> Result<(), String>,
+) -> Result<ShortcutBackendStatus, String> {
+    let _operation = state
+        .shortcut_operations
+        .lock()
+        .map_err(|_| "shortcut operation lock poisoned")?;
+    initialize_shortcut_manager_locked(state, backend, construct, configure)
+}
+
+fn initialize_shortcut_manager_locked(
+    state: &AppState,
+    backend: crate::shortcut::BackendKind,
+    construct: impl FnOnce() -> Result<ShortcutManager, String>,
+    configure: impl FnOnce(&mut ShortcutManager) -> Result<(), String>,
+) -> Result<ShortcutBackendStatus, String> {
+    let (status_revision_before_construct, status_before_construct) = {
+        let runtime = state
+            .shortcut
+            .lock()
+            .map_err(|_| "shortcut lock poisoned")?;
+        if runtime.manager.is_some() {
+            return Ok(runtime.status.clone());
+        }
+        if state.shortcut_stopping.load(Ordering::Acquire) {
+            return Err("shortcut backend is shutting down".to_owned());
+        }
+        (runtime.status_revision, runtime.status.clone())
+    };
+
+    let mut manager = match construct() {
+        Ok(manager) => manager,
+        Err(error) => {
+            let mut runtime = state
+                .shortcut
+                .lock()
+                .map_err(|_| "shortcut lock poisoned")?;
+            if state.shortcut_stopping.load(Ordering::Acquire) {
+                return Err("shortcut backend is shutting down".to_owned());
+            }
+            let actionable_status_was_published = runtime.status_revision
+                != status_revision_before_construct
+                && runtime.status != status_before_construct
+                && matches!(
+                    &runtime.status,
+                    ShortcutBackendStatus::PermissionDenied { .. }
+                        | ShortcutBackendStatus::DevicesUnavailable { .. }
+                );
+            if !actionable_status_was_published {
+                runtime.status = ShortcutBackendStatus::Failed {
+                    backend,
+                    detail: error.clone(),
+                };
+            }
+            return Err(error);
+        }
+    };
+
+    if let Err(error) = configure(&mut manager) {
+        let manager_status = manager.status();
+        let mut runtime = state
+            .shortcut
+            .lock()
+            .map_err(|_| "shortcut lock poisoned")?;
+        if state.shortcut_stopping.load(Ordering::Acquire) {
+            manager.invalidate();
+            return Err("shortcut backend is shutting down".to_owned());
+        }
+        runtime.status = match manager_status {
+            status @ (ShortcutBackendStatus::PermissionDenied { .. }
+            | ShortcutBackendStatus::DevicesUnavailable { .. }) => status,
+            _ => ShortcutBackendStatus::Failed {
+                backend,
+                detail: error.clone(),
+            },
+        };
+        return Err(error);
+    }
+
+    let manager_status = manager.status();
+    let mut runtime = state
+        .shortcut
+        .lock()
+        .map_err(|_| "shortcut lock poisoned")?;
+    if state.shortcut_stopping.load(Ordering::Acquire) {
+        manager.invalidate();
+        runtime.status = ShortcutBackendStatus::ShuttingDown;
+        return Err("shortcut backend is shutting down".to_owned());
+    }
+    let status_was_newly_published = runtime.status_revision != status_revision_before_construct
+        && runtime.status != status_before_construct;
+    let status = if status_was_newly_published
+        && matches!(
+            &runtime.status,
+            ShortcutBackendStatus::PermissionDenied { .. }
+                | ShortcutBackendStatus::DevicesUnavailable { .. }
+                | ShortcutBackendStatus::Failed { .. }
+        ) {
+        runtime.status.clone()
+    } else {
+        manager_status
+    };
+    // The operations lock makes this assignment atomic with the absence check.
+    runtime.manager = Some(manager);
+    runtime.status = status.clone();
+    Ok(status)
+}
+
+/// Under one operation lock, retries an installed manager or initializes the
+/// missing Wayland manager. Callers never infer absence while another operation
+/// has temporarily extracted the manager.
+pub(crate) fn retry_or_initialize_shortcut_manager(
+    state: &AppState,
+    backend: crate::shortcut::BackendKind,
+    retry: impl FnOnce(&mut ShortcutManager) -> Result<(), String>,
+    construct: impl FnOnce() -> Result<ShortcutManager, String>,
+    configure: impl FnOnce(&mut ShortcutManager) -> Result<(), String>,
+) -> Result<ShortcutBackendStatus, String> {
+    let _operation = state
+        .shortcut_operations
+        .lock()
+        .map_err(|_| "shortcut operation lock poisoned")?;
+    if state.shortcut_stopping.load(Ordering::Acquire) {
+        return Err("shortcut backend is shutting down".to_owned());
+    }
+
+    let manager = state
+        .shortcut
+        .lock()
+        .map_err(|_| "shortcut lock poisoned")?
+        .manager
+        .take();
+    if let Some(manager) = manager {
+        let mut guard = ManagerGuard {
+            shortcut: &state.shortcut,
+            manager: Some(manager),
+        };
+        let result = retry(guard.manager_mut());
+        if state.shortcut_stopping.load(Ordering::Acquire) {
+            // Prevent ManagerGuard::drop from reinstalling this manager.
+            if let Some(manager) = guard.manager.take() {
+                manager.invalidate();
+            }
+            return Err("shortcut backend is shutting down".to_owned());
+        }
+        result?;
+        return Ok(guard.manager_mut().status());
+    }
+
+    initialize_shortcut_manager_locked(state, backend, construct, configure)
+}
+
+/// Marks shutdown immediately, then serializes extraction and shutdown of an
+/// installed manager. It is intended to run on a worker so an in-flight helper
+/// handshake never blocks the event loop.
+pub(crate) fn shutdown_shortcut_manager(
+    state: &AppState,
+    shutdown: impl FnOnce(&mut ShortcutManager) -> Result<(), String>,
+) -> Result<(), String> {
+    state.shortcut_stopping.store(true, Ordering::Release);
+    let _operation = state
+        .shortcut_operations
+        .lock()
+        .map_err(|_| "shortcut operation lock poisoned")?;
+    let manager = state
+        .shortcut
+        .lock()
+        .map_err(|_| "shortcut lock poisoned")?
+        .manager
+        .take();
+    if let Some(mut manager) = manager {
+        manager.invalidate();
+        shutdown(&mut manager)?;
+    }
+    Ok(())
+}
+
 fn with_extracted_shortcut_manager<T>(
     shortcut: &Mutex<ShortcutRuntime>,
     shortcut_operations: &Mutex<()>,
@@ -251,7 +442,10 @@ fn with_extracted_shortcut_manager<T>(
         .lock()
         .map_err(|_| "shortcut operation lock poisoned")?;
     let mut runtime = shortcut.lock().map_err(|_| "shortcut lock poisoned")?;
-    let manager = runtime.manager.take().ok_or("shortcut manager is busy")?;
+    let manager = runtime
+        .manager
+        .take()
+        .ok_or("shortcut manager is not initialized")?;
     drop(runtime);
     // The operation runs without holding `shortcut`.
     let mut guard = ManagerGuard {
@@ -264,8 +458,20 @@ fn with_extracted_shortcut_manager<T>(
 }
 
 pub(crate) fn set_shortcut_status(app: &AppHandle, status: ShortcutBackendStatus) {
-    if let Ok(mut shortcut) = app.state::<AppState>().shortcut.lock() {
+    let state = app.state::<AppState>();
+    let stopping = state.shortcut_stopping.load(Ordering::Acquire);
+    if stopping && !matches!(status, ShortcutBackendStatus::ShuttingDown) {
+        return;
+    }
+    if let Ok(mut shortcut) = state.shortcut.lock() {
+        // Redundant check under lock to avoid racing the transition to ShuttingDown
+        if state.shortcut_stopping.load(Ordering::Acquire)
+            && !matches!(status, ShortcutBackendStatus::ShuttingDown)
+        {
+            return;
+        }
         shortcut.status = status.clone();
+        shortcut.status_revision = shortcut.status_revision.wrapping_add(1);
     }
     let _ = app.emit("slovo://shortcut-status", status);
 }
@@ -280,6 +486,7 @@ mod tests {
             status: ShortcutBackendStatus::Starting {
                 backend: crate::shortcut::BackendKind::Native,
             },
+            status_revision: 0,
         })
     }
 
@@ -321,5 +528,257 @@ mod tests {
 
         assert_eq!(result, Err("operation failed"));
         assert!(shortcut.lock().unwrap().manager.is_some());
+    }
+
+    fn test_state() -> AppState {
+        AppState::new(
+            crate::settings::Settings::default(),
+            "Control+Shift+Space".to_owned(),
+            None,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::WaylandHelper,
+            },
+        )
+    }
+
+    #[test]
+    fn initialize_succeeds_and_installs_manager() {
+        let state = test_state();
+        let status = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        assert_eq!(
+            status,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            }
+        );
+        assert!(state.shortcut.lock().unwrap().manager.is_some());
+    }
+
+    #[test]
+    fn initialize_construction_failure_leaves_manager_absent() {
+        let state = test_state();
+        let result = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::WaylandHelper,
+            || Err("spawn failed".to_owned()),
+            |_| unreachable!("configure should not run"),
+        );
+        assert_eq!(result, Err("spawn failed".to_owned()));
+        let runtime = state.shortcut.lock().unwrap();
+        assert!(runtime.manager.is_none());
+        assert_eq!(
+            runtime.status,
+            ShortcutBackendStatus::Failed {
+                backend: crate::shortcut::BackendKind::WaylandHelper,
+                detail: "spawn failed".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn initialize_is_idempotent_when_manager_is_installed() {
+        let state = test_state();
+        initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        let result = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::WaylandHelper,
+            || panic!("second construction must not run"),
+            |_| panic!("second configuration must not run"),
+        );
+        assert_eq!(
+            result,
+            Ok(ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            })
+        );
+    }
+
+    #[test]
+    fn initialize_aborts_before_construction_after_shutdown() {
+        let state = test_state();
+        state.shortcut_stopping.store(true, Ordering::Release);
+        let result = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::WaylandHelper,
+            || panic!("construction must not run after shutdown"),
+            |_| unreachable!(),
+        );
+        assert_eq!(result, Err("shortcut backend is shutting down".to_owned()));
+        assert!(state.shortcut.lock().unwrap().manager.is_none());
+    }
+
+    #[test]
+    fn initialize_does_not_install_when_shutdown_starts_during_construction() {
+        let state = test_state();
+        let result = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || {
+                state.shortcut_stopping.store(true, Ordering::Release);
+                Ok(ShortcutManager::native())
+            },
+            |_| Ok(()),
+        );
+        assert_eq!(result, Err("shortcut backend is shutting down".to_owned()));
+        let runtime = state.shortcut.lock().unwrap();
+        assert!(runtime.manager.is_none());
+        assert_eq!(runtime.status, ShortcutBackendStatus::ShuttingDown);
+    }
+
+    #[test]
+    fn initialization_does_not_hold_shortcut_lock() {
+        let state = test_state();
+        initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || {
+                let runtime = state
+                    .shortcut
+                    .try_lock()
+                    .expect("construction must not hold shortcut lock");
+                assert!(runtime.manager.is_none());
+                drop(runtime);
+                Ok(ShortcutManager::native())
+            },
+            |manager| {
+                let runtime = state
+                    .shortcut
+                    .try_lock()
+                    .expect("configuration must not hold shortcut lock");
+                assert!(runtime.manager.is_none());
+                drop(runtime);
+                manager.invalidate();
+                Ok(())
+            },
+        )
+        .expect("initialization should succeed");
+        assert!(state.shortcut.lock().unwrap().manager.is_some());
+    }
+
+    #[test]
+    fn retry_or_initialize_retries_installed_manager_without_construction() {
+        let state = test_state();
+        initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        let status = retry_or_initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            |_| Ok(()),
+            || panic!("retry with installed manager must not construct"),
+            |_| unreachable!(),
+        )
+        .expect("retry should succeed");
+        assert_eq!(
+            status,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            }
+        );
+        assert!(state.shortcut.lock().unwrap().manager.is_some());
+    }
+
+    #[test]
+    fn retry_or_initialize_constructs_missing_manager() {
+        let state = test_state();
+        let status = retry_or_initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            |_| unreachable!("missing manager must not use existing retry"),
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        assert_eq!(
+            status,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            }
+        );
+        assert!(state.shortcut.lock().unwrap().manager.is_some());
+    }
+
+    #[test]
+    fn shutdown_without_manager_is_benign() {
+        let state = test_state();
+        let result = shutdown_shortcut_manager(&state, |_| panic!("no manager to shut down"));
+        assert_eq!(result, Ok(()));
+        assert!(state.shortcut_stopping.load(Ordering::Acquire));
+        assert!(state.shortcut.lock().unwrap().manager.is_none());
+    }
+
+    #[test]
+    fn initialize_after_prior_actionable_failure_uses_new_manager_status() {
+        let state = test_state();
+        {
+            let mut runtime = state.shortcut.lock().unwrap();
+            runtime.status = ShortcutBackendStatus::PermissionDenied {
+                detail: "no access".to_owned(),
+                setup_available: true,
+            };
+        }
+        let status = initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        // The new manager's own status (Starting) must win, not the stale
+        // PermissionDenied from the previous failed attempt.
+        assert_eq!(
+            status,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            }
+        );
+        let runtime = state.shortcut.lock().unwrap();
+        assert_eq!(
+            runtime.status,
+            ShortcutBackendStatus::Starting {
+                backend: crate::shortcut::BackendKind::Native
+            }
+        );
+        assert!(runtime.manager.is_some());
+    }
+
+    #[test]
+    fn retry_does_not_reinstall_manager_after_shutdown_begins() {
+        let state = test_state();
+        initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            || Ok(ShortcutManager::native()),
+            |_| Ok(()),
+        )
+        .expect("initialization should succeed");
+        let result = retry_or_initialize_shortcut_manager(
+            &state,
+            crate::shortcut::BackendKind::Native,
+            |_| {
+                state.shortcut_stopping.store(true, Ordering::Release);
+                Ok(())
+            },
+            || panic!("shutdown must not construct a new manager"),
+            |_| unreachable!(),
+        );
+        assert_eq!(result, Err("shortcut backend is shutting down".to_owned()));
+        assert!(state.shortcut.lock().unwrap().manager.is_none());
     }
 }
