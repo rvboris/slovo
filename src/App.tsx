@@ -48,6 +48,7 @@ export default function App() {
   // Settings
   const {
     settings,
+    isLoaded: settingsLoaded,
     saveState,
     loadSettings,
     saveSettings,
@@ -98,7 +99,9 @@ export default function App() {
 
   const hotkey = useHotkey({
     hotkey: settings.hotkey,
+    enabled: settingsLoaded,
     onSave: handleHotkeySave,
+    onError: showError,
   });
 
   // Initial load
@@ -136,8 +139,10 @@ export default function App() {
           hotkey={settings.hotkey}
           isCapturing={hotkey.isCapturing}
           captureMessage={hotkey.captureMessage}
+          hotkeyDisabled={!settingsLoaded || hotkey.isStartingCapture}
           onHotkeyClick={hotkey.handleClick}
           onHotkeyKeyDown={hotkey.handleKeyDown}
+          onHotkeyBlur={hotkey.handleBlur}
           shortcutView={shortcutStatus.view}
           shortcutText={shortcutStatus.text}
           shortcutCanRetry={shortcutStatus.canRetry}

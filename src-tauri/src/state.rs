@@ -66,11 +66,34 @@ pub struct AppState {
     pub(crate) shortcut: Mutex<ShortcutRuntime>,
     pub(crate) shortcut_operations: Mutex<()>,
     pub(crate) shortcut_stopping: AtomicBool,
+    /// Monotonic capture token packed as `(token << 1) | active`.
+    /// A token prevents a delayed end command from disabling a newer capture.
+    hotkey_capture: std::sync::atomic::AtomicU64,
     pub(crate) portal: Mutex<Option<portal::PortalController>>,
     pub(crate) status: Mutex<StatusEvent>,
 }
 
 impl AppState {
+    pub(crate) fn set_hotkey_capture(&self, active: bool, token: u64) {
+        let next = (token << 1) | u64::from(active);
+        let mut current = self.hotkey_capture.load(Ordering::Acquire);
+        while token >= (current >> 1) {
+            match self.hotkey_capture.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
+    pub(crate) fn is_hotkey_capture_active(&self) -> bool {
+        self.hotkey_capture.load(Ordering::Acquire) & 1 == 1
+    }
+
     pub(crate) fn new(
         settings: Settings,
         registered_hotkey: String,
@@ -92,6 +115,7 @@ impl AppState {
             }),
             shortcut_operations: Mutex::new(()),
             shortcut_stopping: AtomicBool::new(false),
+            hotkey_capture: std::sync::atomic::AtomicU64::new(0),
             portal: Mutex::new(None),
             status: Mutex::new(StatusEvent {
                 kind: StatusKind::Ready,
@@ -539,6 +563,30 @@ mod tests {
                 backend: crate::shortcut::BackendKind::WaylandHelper,
             },
         )
+    }
+
+    #[test]
+    fn hotkey_capture_ignores_stale_commands() {
+        let state = test_state();
+
+        state.set_hotkey_capture(true, 1);
+        assert!(state.is_hotkey_capture_active());
+
+        state.set_hotkey_capture(false, 2);
+        assert!(!state.is_hotkey_capture_active());
+
+        state.set_hotkey_capture(true, 1);
+        assert!(!state.is_hotkey_capture_active());
+    }
+
+    #[test]
+    fn newer_capture_is_not_cleared_by_older_end() {
+        let state = test_state();
+
+        state.set_hotkey_capture(true, 3);
+        state.set_hotkey_capture(false, 2);
+
+        assert!(state.is_hotkey_capture_active());
     }
 
     #[test]

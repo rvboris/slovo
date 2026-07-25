@@ -8,8 +8,10 @@ interface HotkeySettingProps {
   hotkey: string;
   isCapturing: boolean;
   captureMessage: string | null;
+  hotkeyDisabled: boolean;
   onHotkeyClick: () => void;
   onHotkeyKeyDown: (e: React.KeyboardEvent) => void;
+  onHotkeyBlur: () => void;
   shortcutView: ShortcutViewState;
   shortcutText: string;
   shortcutCanRetry: boolean;
@@ -32,8 +34,10 @@ export function HotkeySetting({
   hotkey,
   isCapturing,
   captureMessage,
+  hotkeyDisabled,
   onHotkeyClick,
   onHotkeyKeyDown,
+  onHotkeyBlur,
   shortcutView,
   shortcutText,
   shortcutCanRetry,
@@ -54,10 +58,13 @@ export function HotkeySetting({
         aria-pressed={isCapturing}
         onClick={onHotkeyClick}
         onKeyDown={onHotkeyKeyDown}
+        onBlur={onHotkeyBlur}
+        disabled={hotkeyDisabled}
         className={cn(
           "flex w-full min-h-[40px] flex-wrap items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors cursor-pointer",
           "hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isCapturing && "border-ring bg-accent",
+          hotkeyDisabled && "cursor-not-allowed opacity-50",
         )}
       >
         {captureMessage ? (
@@ -67,7 +74,7 @@ export function HotkeySetting({
         ) : (
           <span className="inline-flex flex-wrap items-center gap-1 font-semibold">
             {parts.map((part, i) => (
-              <span key={i} className="inline-flex items-center gap-1">
+              <span key={part} className="inline-flex items-center gap-1">
                 {i > 0 && (
                   <span className="text-muted-foreground font-normal">+</span>
                 )}

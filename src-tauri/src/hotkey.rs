@@ -31,6 +31,9 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
     let Some(app_state) = app.try_state::<AppState>() else {
         return;
     };
+    if app_state.is_hotkey_capture_active() {
+        return;
+    }
     let trigger_type = match app_state.settings.lock() {
         Ok(runtime) => runtime.settings.trigger_type,
         Err(_) => return,

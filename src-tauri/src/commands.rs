@@ -153,6 +153,12 @@ pub fn get_status(state: State<'_, AppState>) -> Result<StatusEvent, String> {
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
+pub fn set_hotkey_capture_active(state: State<'_, AppState>, active: bool, token: u64) {
+    state.set_hotkey_capture(active, token);
+}
+
+#[tauri::command]
+#[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
 pub fn update_settings(app: AppHandle, settings: Settings) -> Result<Settings, String> {
     let mut next = settings;
     next.server_url = crate::settings::normalize_server_url(&next.server_url)?;

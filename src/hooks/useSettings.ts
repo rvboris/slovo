@@ -15,6 +15,7 @@ interface UseSettingsOptions {
 
 export function useSettings({ onError, onClearError }: UseSettingsOptions) {
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
+  const [isLoaded, setIsLoaded] = useState(false);
   const [saveState, setSaveState] = useState<{ text: string; kind: SaveKind }>({
     text: "Изменения сохраняются автоматически",
     kind: "idle",
@@ -87,6 +88,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
       );
       setSettings(loaded);
       persistedRef.current = { ...loaded };
+      setIsLoaded(true);
     } catch (error) {
       onError(
         getErrorMessage(error, "Не удалось загрузить настройки."),
@@ -146,6 +148,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
 
   return {
     settings,
+    isLoaded,
     saveState,
     loadSettings,
     saveSettings,

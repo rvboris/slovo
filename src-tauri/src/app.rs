@@ -173,6 +173,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             crate::commands::get_settings,
+            crate::commands::set_hotkey_capture_active,
             crate::commands::update_settings,
             crate::commands::get_status,
             crate::commands::get_shortcut_backend_status,
