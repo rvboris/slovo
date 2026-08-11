@@ -1,57 +1,211 @@
 :root {
-  color-scheme: light dark;
-  font-family: "Segoe UI Variable Text", "SF Pro Text", system-ui, sans-serif;
+  font-family: "Aptos", "Segoe UI Variable Text", "SF Pro Text", system-ui, sans-serif;
   font-synthesis: none;
 }
 
-* { box-sizing: border-box; }
-html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
-body { padding: 2px; }
+* {
+  box-sizing: border-box;
+}
 
-.recording-indicator {
+html,
+body {
   width: 100%;
   height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 2px;
+}
+
+.recording-indicator {
+  width: 168px;
+  height: 44px;
+  display: grid;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 22px;
+  background: linear-gradient(145deg, rgba(34, 36, 43, 0.97), rgba(18, 20, 25, 0.97));
+  color: #f4f5f7;
+  /* ponytail: no outer box-shadow — the window clips it and on
+     XWayland/WebKitGTK the clipped shadow composites against an opaque
+     canvas, producing a dark halo.  Add back if the compositor changes. */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  position: relative;
+}
+
+/* Voice-level meter: one continuous fill hugging the pill's bottom edge.
+   Reads instantly as "how loud" without equalizer-bar gimmickry.
+   --lvl is a 0..100% inline custom property driven by recording.ts. */
+.voice-level {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* Hide the meter entirely outside the recording state — error and loading
+   pills stay uncluttered. The fill itself already collapses to 0 via
+   resetVoiceLevel(); this also removes the faint baseline track. */
+.recording-indicator.is-error .voice-level,
+.recording-indicator.is-loading .voice-level {
+  display: none;
+}
+
+.voice-level::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 100%;
+  width: var(--lvl, 0%);
+  border-radius: 0 2px 2px 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 77, 94, 0.95),
+    rgba(255, 138, 92, 0.95)
+  );
+  box-shadow: 0 0 6px rgba(255, 77, 94, 0.35);
+  transition: width 90ms linear;
+}
+
+.indicator-state {
+  grid-area: 1 / 1;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+}
+
+.indicator-state[hidden] {
+  display: none;
+}
+
+.recording-state {
+  display: grid;
+  place-items: center;
+  padding-bottom: 3px;
+}
+
+.recording-row {
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 0 14px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 14px;
-  background: rgba(25, 28, 34, 0.94);
-  color: #f8fafc;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  font-size: 13px;
-  font-weight: 600;
-  user-select: none;
 }
 
 .recording-dot {
-  width: 9px;
-  height: 9px;
+  width: 8px;
+  height: 8px;
   flex: 0 0 auto;
   border-radius: 50%;
-  background: #ef4444;
-  box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.18);
-  animation: recording-pulse 1.35s ease-in-out infinite;
+  background: #ff4d5e;
+  box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.16);
+  animation: recording-pulse 1.4s ease-in-out infinite;
 }
 
-.recording-label { flex: 1; }
-#recording-time { color: #cbd5e1; font-variant-numeric: tabular-nums; }
+#recording-time {
+  min-width: 41px;
+  color: #f4f5f7;
+  font-size: 13px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+.error-state {
+  display: grid;
+  place-items: center;
+  color: #fff4f4;
+}
+
+.error-mark {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #ff5b68;
+  color: #241316;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.recording-indicator.is-error {
+  border-color: rgba(255, 104, 116, 0.34);
+  background: linear-gradient(145deg, rgba(67, 30, 36, 0.98), rgba(31, 19, 23, 0.98));
+}
+
+.recording-indicator.is-loading {
+  visibility: hidden;
+}
 
 @keyframes recording-pulse {
-  50% { opacity: 0.55; transform: scale(0.88); }
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(255, 77, 94, 0.14);
+    transform: scale(0.94);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(255, 77, 94, 0.22);
+    transform: scale(1);
+  }
 }
 
 @media (prefers-color-scheme: light) {
   .recording-indicator {
-    border-color: rgba(15, 23, 42, 0.12);
-    background: rgba(255, 255, 255, 0.96);
-    color: #172033;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+    border-color: rgba(25, 30, 42, 0.12);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 245, 248, 0.98));
+    color: #20232b;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   }
-  #recording-time { color: #64748b; }
+
+  #recording-time {
+    color: #20232b;
+  }
+
+  .recording-indicator.is-error {
+    border-color: rgba(190, 42, 58, 0.25);
+    background: linear-gradient(145deg, rgba(255, 244, 245, 0.99), rgba(255, 229, 232, 0.99));
+  }
+
+  .error-state {
+    color: #731d29;
+  }
+
+  .error-mark {
+    background: #cf3344;
+    color: #ffffff;
+  }
+
+  .voice-level {
+    background: rgba(25, 30, 42, 0.06);
+  }
+
+  .voice-level::after {
+    background: linear-gradient(90deg, #e83a4d, #e8743c);
+    box-shadow: 0 0 6px rgba(207, 51, 68, 0.28);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .recording-dot { animation: none; }
+  .recording-dot {
+    animation: none;
+  }
+
+  /* Keep the level readable; smoothing still comes from the TS filter,
+     just stop CSS from animating between steps. */
+  .voice-level::after {
+    transition: none;
+  }
 }

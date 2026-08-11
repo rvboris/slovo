@@ -16,8 +16,7 @@ export interface Settings {
 }
 
 export interface InputDevice {
-  value: string;
-  label: string;
+  name: string;
   isDefault: boolean;
 }
 
@@ -27,7 +26,7 @@ export interface StatusPayload {
   elapsedSeconds?: number;
 }
 
-export type ShortcutBackend = "native" | "wayland-helper" | "legacy-portal";
+export type ShortcutBackend = "native" | "wayland-helper";
 
 export interface ShortcutBackendStatusPayload {
   state:

@@ -1,4 +1,5 @@
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use crate::settings;
 use reqwest::multipart::{Form, Part};
@@ -13,6 +14,23 @@ static HTTP_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 
 fn shared_client() -> &'static reqwest::Client {
     HTTP_CLIENT.get_or_init(reqwest::Client::new)
+}
+
+pub async fn check_server(server_url: &str) -> Result<(), String> {
+    let url = settings::transcription_url(server_url)?;
+    shared_client()
+        .get(url)
+        .timeout(Duration::from_secs(3))
+        .send()
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            if error.is_timeout() {
+                "Сервер не ответил вовремя.".to_owned()
+            } else {
+                "Не удалось подключиться к серверу.".to_owned()
+            }
+        })
 }
 
 pub async fn transcribe(server_url: &str, wav: Vec<u8>) -> Result<String, String> {

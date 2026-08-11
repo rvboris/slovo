@@ -7,10 +7,30 @@
     <link rel="stylesheet" href="/src/recording.css" />
   </head>
   <body>
-    <main class="recording-indicator" role="status" aria-live="polite" aria-atomic="true">
-      <span class="recording-dot" aria-hidden="true"></span>
-      <span class="recording-label">Запись</span>
-      <time id="recording-time" datetime="PT0S">00:00</time>
+    <main class="recording-indicator is-loading">
+      <div
+        id="recording-state"
+        class="indicator-state recording-state"
+        role="status"
+        aria-label="Идёт запись"
+      >
+        <div class="recording-row">
+          <span class="recording-dot" aria-hidden="true"></span>
+          <time id="recording-time" datetime="PT0S">00:00</time>
+        </div>
+        <div id="voice-level" class="voice-level" aria-hidden="true"></div>
+      </div>
+      <div
+        id="error-state"
+        class="indicator-state error-state"
+        role="alert"
+        aria-label="Ошибка записи"
+        aria-live="assertive"
+        aria-atomic="true"
+        hidden
+      >
+        <span class="error-mark" aria-hidden="true">!</span>
+      </div>
     </main>
     <script type="module" src="/src/recording.ts"></script>
   </body>

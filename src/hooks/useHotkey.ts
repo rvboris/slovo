@@ -34,8 +34,6 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
     setIsCapturing(false);
     setIsStartingCapture(false);
     setCaptureMessage(null);
-    // State is restored in the UI immediately. The monotonic token makes a
-    // delayed `false` safe even if another capture starts meanwhile.
     void setBackendCapture(false, token).catch((error) => {
       if (mountedRef.current) {
         onError(getErrorMessage(error, "Не удалось завершить захват сочетания."));
@@ -73,6 +71,12 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
 
   useEffect(() => {
     mountedRef.current = true;
+    // Tauri keeps the Rust state across frontend HMR. Clear a capture latch
+    // left behind if the previous webview was reloaded before its cleanup ran.
+    const token = nextCaptureToken();
+    captureTokenRef.current = token;
+    void setBackendCapture(false, token).catch(() => undefined);
+
     return () => {
       mountedRef.current = false;
       const token = nextCaptureToken();
@@ -82,8 +86,7 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
   }, [setBackendCapture]);
 
   const handleKeyDown = useCallback(
-    (event: React.KeyboardEvent) => {
-      if (!isCapturing) return;
+    (event: KeyboardEvent) => {
       event.preventDefault();
       event.stopPropagation();
 
@@ -92,7 +95,7 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
         return;
       }
 
-      const result = formatHotkey(event.nativeEvent);
+      const result = formatHotkey(event);
       if (!result) {
         setCaptureMessage(
           isModifierKey(event.key)
@@ -102,11 +105,17 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
         return;
       }
 
-      endCapture();
       onSave(result);
+      endCapture();
     },
-    [isCapturing, endCapture, onSave],
+    [endCapture, onSave],
   );
+
+  useEffect(() => {
+    if (!isCapturing) return;
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [isCapturing, handleKeyDown]);
 
   const handleClick = useCallback(() => {
     if (isCapturing) {
@@ -122,7 +131,5 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
     captureMessage,
     displayHotkey: hotkey,
     handleClick,
-    handleKeyDown,
-    handleBlur: endCapture,
   };
 }

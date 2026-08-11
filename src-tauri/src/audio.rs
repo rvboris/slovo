@@ -2,6 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
 use num_traits::cast;
 use std::io::Cursor;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -12,6 +13,12 @@ const VAD_SILENCE: Duration = Duration::from_millis(900);
 const VAD_THRESHOLD_MULTIPLIER: f32 = 3.0;
 const VAD_MIN_THRESHOLD: f32 = 0.012;
 
+/// RMS at which the normalized level saturates to 1.0. Chosen just above the
+/// speech range the VAD already reacts to (`VAD_MIN_THRESHOLD * a few x`): a
+/// normal speaking voice lands in the upper half of the bar, background noise
+/// stays near the bottom.
+const LEVEL_FULL_SCALE_RMS: f32 = 0.08;
+
 type StopCallback = Box<dyn Fn() + Send + Sync + 'static>;
 
 enum Command {
@@ -19,7 +26,10 @@ enum Command {
         auto_vad: bool,
         device_name: Option<String>,
         on_auto_stop: StopCallback,
-        reply: mpsc::Sender<Result<(), String>>,
+        // Replies with the cpal device name that was actually opened (which may
+        // differ from the configured setting, e.g. when it resolves to the
+        // system default), so callers can surface it to the user.
+        reply: mpsc::Sender<Result<String, String>>,
     },
     Stop {
         reply: mpsc::Sender<Result<Vec<u8>, String>>,
@@ -44,11 +54,17 @@ impl Drop for ActiveRecording {
 #[derive(Clone)]
 pub struct AudioController {
     commands: mpsc::Sender<Command>,
+    // Live microphone level as f32 RMS bits (0.0 when idle). Updated from the
+    // capture callback, read by the recording overlay poller. Reset to silence
+    // whenever a recording starts or stops so a stale value never leaks out.
+    level: Arc<AtomicU32>,
 }
 
 impl AudioController {
     pub fn new() -> Self {
         let (commands, receiver) = mpsc::channel();
+        let level = Arc::new(AtomicU32::new(0));
+        let worker_level = Arc::clone(&level);
         std::thread::spawn(move || {
             let mut active: Option<ActiveRecording> = None;
             while let Ok(command) = receiver.recv() {
@@ -62,15 +78,22 @@ impl AudioController {
                         let result = if active.is_some() {
                             Err("recording is already active".into())
                         } else {
-                            open_stream(auto_vad, device_name.as_deref(), on_auto_stop).map(
-                                |recording| {
-                                    active = Some(recording);
-                                },
+                            worker_level.store(0, Ordering::Relaxed);
+                            open_stream(
+                                auto_vad,
+                                device_name.as_deref(),
+                                on_auto_stop,
+                                Arc::clone(&worker_level),
                             )
+                            .map(|(recording, opened_name)| {
+                                active = Some(recording);
+                                opened_name
+                            })
                         };
                         let _ = reply.send(result);
                     }
                     Command::Stop { reply } => {
+                        worker_level.store(0, Ordering::Relaxed);
                         let result = active
                             .take()
                             .ok_or_else(|| "no active recording".into())
@@ -96,15 +119,18 @@ impl AudioController {
                 }
             }
         });
-        Self { commands }
+        Self { commands, level }
     }
 
+    /// Starts capture and returns the cpal name of the device that was actually
+    /// opened. When `device_name` is `None`/empty this is the system default
+    /// input, so callers can show the user which microphone is live.
     pub fn start(
         &self,
         auto_vad: bool,
         device_name: Option<String>,
         on_auto_stop: StopCallback,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let (reply, receiver) = mpsc::channel();
         self.commands
             .send(Command::Start {
@@ -124,13 +150,24 @@ impl AudioController {
             .map_err(|_| "audio worker stopped")?;
         receiver.recv().map_err(|_| "audio worker stopped")?
     }
+
+    /// Normalized live microphone level in `0.0..=1.0`, or `0.0` when not
+    /// recording. Cheap lock-free read; safe to poll from the UI thread.
+    pub fn level(&self) -> f32 {
+        let bits = self.level.load(Ordering::Relaxed);
+        if bits == 0 {
+            return 0.0;
+        }
+        normalize_level(f32::from_bits(bits))
+    }
 }
 
 fn open_stream(
     auto_vad: bool,
     device_name: Option<&str>,
     on_auto_stop: StopCallback,
-) -> Result<ActiveRecording, String> {
+    level: Arc<AtomicU32>,
+) -> Result<(ActiveRecording, String), String> {
     let host = cpal::default_host();
     let device = match device_name.map(str::trim) {
         Some(name) if !name.is_empty() => select_device_by_name(&host, name)?,
@@ -138,6 +175,13 @@ fn open_stream(
             .default_input_device()
             .ok_or("no default microphone available")?,
     };
+    // Capture the cpal device name now, before `device` is moved into
+    // `build_input_stream`. This is the real microphone that got opened, which
+    // the configured setting may only approximate (or resolve to the default).
+    let opened_name = device
+        .name()
+        .map(|name| name.trim().to_owned())
+        .unwrap_or_default();
     let supported = device
         .default_input_config()
         .map_err(|error| format!("cannot read microphone config: {error}"))?;
@@ -155,6 +199,7 @@ fn open_stream(
             let samples = Arc::clone(&samples);
             let vad = Arc::clone(&vad);
             let stop_once = Arc::clone(&stop_once);
+            let level = Arc::clone(&level);
             device.build_input_stream(
                 &config,
                 move |data: &[$type], _| {
@@ -162,6 +207,7 @@ fn open_stream(
                     if let Ok(mut target) = samples.lock() {
                         target.extend_from_slice(&mono);
                     }
+                    level.store(rms(&mono).to_bits(), Ordering::Relaxed);
                     let should_stop = started.elapsed() >= MAX_DURATION
                         || (auto_vad && vad.lock().map(|mut v| v.observe(&mono)).unwrap_or(false));
                     if should_stop {
@@ -193,11 +239,14 @@ fn open_stream(
     stream
         .play()
         .map_err(|error| format!("cannot start microphone: {error}"))?;
-    Ok(ActiveRecording {
-        stream,
-        samples,
-        sample_rate,
-    })
+    Ok((
+        ActiveRecording {
+            stream,
+            samples,
+            sample_rate,
+        },
+        opened_name,
+    ))
 }
 
 fn select_device_by_name(host: &cpal::Host, wanted: &str) -> Result<cpal::Device, String> {
@@ -226,6 +275,16 @@ pub struct InputDevice {
     pub is_default: bool,
 }
 
+fn is_obvious_non_microphone_capture_endpoint(name: &str) -> bool {
+    let name = name.trim().to_ascii_lowercase();
+    name.starts_with("monitor of ")
+        || name.ends_with(" monitor")
+        || name.contains(".monitor")
+        || name
+            .split(|character: char| !character.is_ascii_alphanumeric())
+            .any(|part| part == "loopback")
+}
+
 pub fn list_input_devices() -> Result<Vec<InputDevice>, String> {
     let host = cpal::default_host();
     let default_name = host
@@ -236,11 +295,17 @@ pub fn list_input_devices() -> Result<Vec<InputDevice>, String> {
         .input_devices()
         .map_err(|error| format!("cannot enumerate input devices: {error}"))?
         .filter_map(|device| {
+            if device.default_input_config().is_err() {
+                return None;
+            }
             device
                 .name()
                 .ok()
                 .map(|name| name.trim().to_owned())
                 .filter(|name| !name.is_empty())
+                .filter(|name| {
+                    !cfg!(target_os = "linux") || !is_obvious_non_microphone_capture_endpoint(name)
+                })
                 .map(|name| InputDevice {
                     is_default: default_name.as_deref() == Some(name.as_str()),
                     name,
@@ -299,6 +364,32 @@ impl Vad {
                 .silence_since
                 .is_some_and(|at| at.elapsed() >= VAD_SILENCE)
     }
+}
+
+/// Root-mean-square of a mono buffer, 0 for empty input. Mirrors the energy
+/// estimate the VAD already computes.
+fn rms(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let (sum_squares, count) = samples
+        .iter()
+        .fold((0.0_f32, 0.0_f32), |(sum, count), value| {
+            (value.mul_add(*value, sum), count + 1.0)
+        });
+    (sum_squares / count).sqrt()
+}
+
+/// Map an RMS level to a `0.0..=1.0` bar height. Linear RMS would leave the bar
+/// parked near the bottom for normal speech, so we apply a gentle sqrt curve
+/// and saturate at [`LEVEL_FULL_SCALE_RMS`]; the ceiling sits just above the
+/// speech range the VAD reacts to, so background noise reads low and a clear
+/// voice fills the bar without pegging on quiet talk.
+fn normalize_level(rms: f32) -> f32 {
+    if !rms.is_finite() || rms <= 0.0 {
+        return 0.0;
+    }
+    (rms / LEVEL_FULL_SCALE_RMS).sqrt().clamp(0.0, 1.0)
 }
 
 pub fn interleaved_to_mono<T: Copy>(
@@ -390,6 +481,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn identifies_obvious_non_microphone_capture_endpoints() {
+        for name in [
+            "Monitor of Built-in Audio Analog Stereo",
+            "Built-in Audio Analog Stereo Monitor",
+            "alsa_output.pci-0000_00_1f.3.analog-stereo.monitor",
+            "Loopback",
+            "Loopback PCM",
+        ] {
+            assert!(
+                is_obvious_non_microphone_capture_endpoint(name),
+                "expected {name:?} to be excluded"
+            );
+        }
+    }
+
+    #[test]
+    fn preserves_possible_microphone_endpoints() {
+        for name in [
+            "Unknown",
+            "default",
+            "sysdefault",
+            "USB Audio Device",
+            "Bluetooth Headset Microphone",
+            "Monitor Audio USB Microphone",
+        ] {
+            assert!(
+                !is_obvious_non_microphone_capture_endpoint(name),
+                "expected {name:?} to be preserved"
+            );
+        }
+    }
+
+    #[test]
     fn mixes_stereo_to_mono() {
         assert_eq!(
             interleaved_to_mono(&[1.0, -1.0, 0.5, 0.5], 2, |v| v),
@@ -401,6 +525,21 @@ mod tests {
     fn resamples_linearly() {
         assert_eq!(resample_linear(&[0.0, 1.0], 2, 4), vec![0.0, 0.5, 1.0, 1.0]);
         assert_eq!(resample_linear(&[0.2, 0.4], 16_000, 16_000), vec![0.2, 0.4]);
+    }
+
+    #[test]
+    fn normalizes_level_into_unit_range() {
+        // Silence / invalid inputs collapse to zero.
+        assert_eq!(normalize_level(0.0), 0.0);
+        assert_eq!(normalize_level(-1.0), 0.0);
+        assert_eq!(normalize_level(f32::NAN), 0.0);
+        // The full-scale ceiling saturates to 1.0 and never exceeds it.
+        assert!((normalize_level(LEVEL_FULL_SCALE_RMS) - 1.0).abs() < 1e-6);
+        assert_eq!(normalize_level(LEVEL_FULL_SCALE_RMS * 4.0), 1.0);
+        // Quiet background noise (just under the VAD floor) reads low but
+        // non-zero, loud speech (a few times the floor) lands high.
+        assert!(normalize_level(VAD_MIN_THRESHOLD) < 0.45);
+        assert!(normalize_level(VAD_MIN_THRESHOLD * 4.0) > 0.5);
     }
 
     #[test]

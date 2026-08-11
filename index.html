@@ -3,10 +3,145 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Слово — Настройки диктовки</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #fff;
+        color: #252525;
+      }
+      body {
+        font-family: system-ui, -apple-system, sans-serif;
+      }
+      #root {
+        min-height: 100vh;
+      }
+      .startup-shell {
+        box-sizing: border-box;
+        display: flex;
+        min-height: 100vh;
+        width: 100%;
+        max-width: 520px;
+        margin: 0 auto;
+        padding: 24px;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .startup-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .startup-brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .startup-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 10px;
+        background: #292929;
+        color: #fafafa;
+        font-size: 18px;
+        line-height: 1;
+      }
+      .startup-title {
+        margin: 0;
+        font-size: 16px;
+        line-height: 24px;
+      }
+      .startup-status {
+        border-radius: 999px;
+        background: #f5f5f5;
+        padding: 4px 10px;
+        color: #575757;
+        font-size: 12px;
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .startup-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+      .startup-setting {
+        display: grid;
+        gap: 8px;
+      }
+      .startup-label {
+        width: 34%;
+        height: 14px;
+        border-radius: 4px;
+        background: #e7e7e7;
+      }
+      .startup-control {
+        box-sizing: border-box;
+        height: 36px;
+        border: 1px solid #e2e2e2;
+        border-radius: 6px;
+        background: transparent;
+      }
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background: #252525;
+          color: #fafafa;
+        }
+        .startup-mark {
+          background: #ededed;
+          color: #333;
+        }
+        .startup-status,
+        .startup-label {
+          background: #3d3d3d;
+          color: #b4b4b4;
+        }
+        .startup-control {
+          border-color: #454545;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <main class="startup-shell" aria-label="Слово">
+        <header class="startup-header">
+          <div class="startup-brand">
+            <span class="startup-mark" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <rect x="9" y="2" width="6" height="12" rx="3"></rect>
+                <path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"></path>
+              </svg>
+            </span>
+            <h1 class="startup-title">Слово</h1>
+          </div>
+          <div class="startup-status" role="status" aria-live="polite">
+            Запуск приложения…
+          </div>
+        </header>
+        <section class="startup-settings" aria-label="Загрузка настроек" aria-busy="true">
+          <div class="startup-setting" aria-hidden="true">
+            <span class="startup-label"></span><span class="startup-control"></span>
+          </div>
+          <div class="startup-setting" aria-hidden="true">
+            <span class="startup-label"></span><span class="startup-control"></span>
+          </div>
+          <div class="startup-setting" aria-hidden="true">
+            <span class="startup-label"></span><span class="startup-control"></span>
+          </div>
+          <div class="startup-setting" aria-hidden="true">
+            <span class="startup-label"></span><span class="startup-control"></span>
+          </div>
+        </section>
+      </main>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

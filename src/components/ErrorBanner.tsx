@@ -17,7 +17,7 @@ export function ErrorBanner({ message, hasRetry, onRetry }: ErrorBannerProps) {
       className="flex items-center gap-2 rounded-md bg-destructive/10 px-4 py-3 text-sm text-destructive"
     >
       <AlertCircle className="h-4 w-4 flex-shrink-0" />
-      <span className="flex-1 min-w-0 font-medium">{message}</span>
+      <span className="min-w-0 flex-1 line-clamp-2 break-words font-medium">{message}</span>
       {hasRetry && (
         <Button
           variant="outline"

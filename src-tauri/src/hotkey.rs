@@ -1,7 +1,7 @@
 //! Hotkey event normalization, parsing, and the recording lifecycle that a
 //! hotkey press triggers.
 //!
-//! The X11 global-shortcut plugin and the Wayland portal route both feed into
+//! The native global-shortcut plugin and Wayland helper both feed into
 //! [`handle_hotkey_action`], which converts a normalized [`HotkeyEvent`] into a
 //! trigger action and, if needed, starts or stops an audio recording.
 
@@ -10,12 +10,30 @@ use crate::settings::TriggerType;
 use crate::state::{emit_status, emit_status_event, AppState, StatusEvent, StatusKind};
 use crate::transcription;
 use crate::trigger::Action;
+use serde::Serialize;
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutEvent, ShortcutState};
 
-/// Normalized hotkey event used by both the X11 shortcut plugin and the
-/// Wayland portal route.
+/// Poll interval for the live microphone level sent to the recording overlay.
+/// Fast enough to feel responsive, slow enough that it never thrashes window
+/// machinery (it emits its own event, not a `StatusEvent`, so
+/// `manage_recording_overlay` is not involved).
+const AUDIO_LEVEL_INTERVAL: Duration = Duration::from_millis(80);
+
+/// Payload for the `slovo://audio-level` event. `device_name` is the cpal
+/// device that was actually opened (the system default when no device is
+/// configured), so the overlay can show which microphone is live alongside the
+/// level — making "wrong device selected" visible at a glance.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AudioLevel {
+    level: f32,
+    device_name: String,
+}
+
+/// Normalized hotkey event used by both the native shortcut plugin and the
+/// Wayland helper.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HotkeyEvent {
     Pressed,
@@ -23,7 +41,7 @@ pub enum HotkeyEvent {
 }
 
 /// Dispatcher that converts a normalized hotkey event into trigger/recording
-/// actions. Shared by the X11 global shortcut handler and the Wayland portal.
+/// actions. Shared by the native shortcut handler and the Wayland helper.
 pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
     if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
         eprintln!("[slovo] hotkey action boundary event={event:?}");
@@ -46,7 +64,9 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
         Err(_) => return,
     };
     match action {
-        Action::Start => start_recording(app, trigger_type == TriggerType::AutoVad),
+        Action::Start => {
+            check_server_and_start_recording(app, trigger_type == TriggerType::AutoVad)
+        }
         Action::Stop => stop_recording(app),
         Action::None => {}
     }
@@ -88,7 +108,48 @@ pub(crate) fn parse_hotkey(value: &str) -> Result<Shortcut, String> {
         .map_err(|error| format!("invalid hotkey: {error}"))
 }
 
-pub(crate) fn start_recording(app: &AppHandle, auto_vad: bool) {
+fn check_server_and_start_recording(app: &AppHandle, auto_vad: bool) {
+    let state = app.state::<AppState>();
+    let Some(token) = state.begin_recording_start() else {
+        return;
+    };
+    let server_url = match state.settings.lock() {
+        Ok(runtime) => runtime.settings.server_url.clone(),
+        Err(_) => {
+            state.finish_recording_start(token);
+            if let Ok(mut trigger) = state.trigger.lock() {
+                trigger.force_idle();
+            }
+            emit_status(
+                app,
+                StatusKind::Error,
+                Some("Не удалось прочитать адрес сервера.".to_owned()),
+            );
+            return;
+        }
+    };
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let check = transcription::check_server(&server_url).await;
+        let state = app.state::<AppState>();
+        if !state.recording_start_is_current(token) {
+            return;
+        }
+        match check {
+            Ok(()) => start_recording(&app, auto_vad, token),
+            Err(error) => {
+                if state.finish_recording_start(token) {
+                    if let Ok(mut trigger) = state.trigger.lock() {
+                        trigger.force_idle();
+                    }
+                    emit_status(&app, StatusKind::Error, Some(error));
+                }
+            }
+        }
+    });
+}
+
+fn start_recording(app: &AppHandle, auto_vad: bool, token: u64) {
     let app_for_stop = app.clone();
     let state = app.state::<AppState>();
     let device_name = state
@@ -105,7 +166,7 @@ pub(crate) fn start_recording(app: &AppHandle, auto_vad: bool) {
         }),
     );
     match result {
-        Ok(()) => {
+        Ok(opened_device_name) if state.finish_recording_start(token) => {
             let started = Instant::now();
             if let Ok(mut recording) = state.recording.lock() {
                 *recording = Some(started);
@@ -119,12 +180,18 @@ pub(crate) fn start_recording(app: &AppHandle, auto_vad: bool) {
                 },
             );
             spawn_recording_timer(app.clone(), started);
+            spawn_audio_level_loop(app.clone(), started, opened_device_name);
+        }
+        Ok(_) => {
+            let _ = state.audio.stop();
         }
         Err(error) => {
-            if let Ok(mut trigger) = state.trigger.lock() {
-                trigger.force_idle();
+            if state.finish_recording_start(token) {
+                if let Ok(mut trigger) = state.trigger.lock() {
+                    trigger.force_idle();
+                }
+                emit_status(app, StatusKind::Error, Some(error));
             }
-            emit_status(app, StatusKind::Error, Some(error));
         }
     }
 }
@@ -155,8 +222,39 @@ fn spawn_recording_timer(app: AppHandle, started: Instant) {
     });
 }
 
+fn spawn_audio_level_loop(app: AppHandle, started: Instant, device_name: String) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(AUDIO_LEVEL_INTERVAL).await;
+            let state = app.state::<AppState>();
+            // Exit as soon as this recording is no longer current: a new
+            // recording replaces `started` with a fresh Instant, and stop
+            // clears it to None. Either way we must stop polling.
+            let still_current = state
+                .recording
+                .lock()
+                .map_or(false, |recording| *recording == Some(started));
+            if !still_current {
+                break;
+            }
+            let level = state.audio.level();
+            // Send a plain payload directly; deliberately not a StatusEvent so
+            // `manage_recording_overlay` (which performs window show/hide/resize)
+            // is never triggered by the level heartbeat.
+            let _ = app.emit(
+                "slovo://audio-level",
+                AudioLevel {
+                    level,
+                    device_name: device_name.clone(),
+                },
+            );
+        }
+    });
+}
+
 pub(crate) fn stop_recording(app: &AppHandle) {
     let state = app.state::<AppState>();
+    state.cancel_recording_start();
     let started = state
         .recording
         .lock()

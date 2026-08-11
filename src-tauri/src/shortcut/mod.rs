@@ -11,7 +11,6 @@ pub use slovo_shortcut_core::chord::{ShortcutChord, ShortcutError};
 pub enum BackendKind {
     Native,
     WaylandHelper,
-    LegacyPortal,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -88,7 +87,6 @@ pub enum ShortcutManager {
     Native(NativeShortcutBackend),
     #[cfg(target_os = "linux")]
     Wayland(Box<wayland::WaylandSupervisor>),
-    LegacyPortal,
 }
 
 impl ShortcutManager {
@@ -110,19 +108,6 @@ impl ShortcutManager {
         ))
     }
 
-    pub const fn legacy_portal() -> Self {
-        Self::LegacyPortal
-    }
-
-    pub const fn kind(&self) -> BackendKind {
-        match self {
-            Self::Native(_) => BackendKind::Native,
-            #[cfg(target_os = "linux")]
-            Self::Wayland(_) => BackendKind::WaylandHelper,
-            Self::LegacyPortal => BackendKind::LegacyPortal,
-        }
-    }
-
     pub fn status(&self) -> ShortcutBackendStatus {
         match self {
             Self::Native(backend) => backend.active_chord().map_or(
@@ -137,11 +122,6 @@ impl ShortcutManager {
             ),
             #[cfg(target_os = "linux")]
             Self::Wayland(backend) => backend.status(),
-            Self::LegacyPortal => ShortcutBackendStatus::Active {
-                backend: BackendKind::LegacyPortal,
-                shortcut: String::new(),
-                device_count: None,
-            },
         }
     }
 
@@ -154,7 +134,6 @@ impl ShortcutManager {
             Self::Native(backend) => backend.register(app, chord),
             #[cfg(target_os = "linux")]
             Self::Wayland(backend) => backend.replace(&chord),
-            Self::LegacyPortal => Ok(()),
         }
     }
 
@@ -163,9 +142,6 @@ impl ShortcutManager {
             Self::Native(_) => Ok(()),
             #[cfg(target_os = "linux")]
             Self::Wayland(backend) => backend.retry(),
-            Self::LegacyPortal => Err(ShortcutError::Backend(
-                "retry is unavailable for the legacy portal backend".to_owned(),
-            )),
         }
     }
 
@@ -181,7 +157,6 @@ impl ShortcutManager {
             Self::Native(backend) => backend.shutdown(app),
             #[cfg(target_os = "linux")]
             Self::Wayland(backend) => backend.shutdown(),
-            Self::LegacyPortal => Ok(()),
         }
     }
 }

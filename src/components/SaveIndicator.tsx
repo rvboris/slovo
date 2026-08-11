@@ -7,21 +7,36 @@ interface SaveIndicatorProps {
 }
 
 const dotColor: Record<SaveKind, string> = {
-  idle: "bg-muted-foreground opacity-50",
+  idle: "bg-muted-foreground/70",
   saving: "bg-primary animate-pulse",
   saved: "bg-primary",
   error: "bg-destructive",
 };
 
+const indicatorStyle: Record<SaveKind, string> = {
+  idle: "text-muted-foreground",
+  saving: "border-primary/20 bg-primary/5 text-foreground",
+  saved: "text-foreground",
+  error: "border-destructive/20 bg-destructive/10 text-destructive",
+};
+
 export function SaveIndicator({ text, kind }: SaveIndicatorProps) {
   return (
-    <footer className="flex items-center justify-center mt-auto pt-4" data-save-kind={kind}>
-      <span className="inline-flex items-center gap-[7px] text-xs text-muted-foreground font-medium">
+    <footer className="mt-auto flex shrink-0 items-center justify-center" data-save-kind={kind}>
+      <span
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className={cn(
+          "inline-flex min-h-8 items-center gap-2 rounded-full border border-border bg-card px-3.5 py-1.5 text-xs font-medium shadow-sm transition-colors",
+          indicatorStyle[kind],
+        )}
+      >
         <span
-          className={cn("h-1.5 w-1.5 rounded-full transition-colors", dotColor[kind])}
+          className={cn("h-1.5 w-1.5 shrink-0 rounded-full transition-colors", dotColor[kind])}
           aria-hidden="true"
         />
-        <span className={kind === "saved" ? "opacity-60" : ""}>
+        <span>
           {text}
           {kind === "saving" && "…"}
         </span>

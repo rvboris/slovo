@@ -21,8 +21,7 @@ const statusLabels: Record<StatusKind, string> = {
 };
 
 export function useStatus(
-  onError: (message: string, retry?: () => Promise<void>) => void,
-  onClearError: () => void,
+  onConnectionError: (message: string, retry?: () => Promise<void>) => void,
 ) {
   const [status, setStatusState] = useState<StatusState>({
     kind: "ready",
@@ -43,19 +42,18 @@ export function useStatus(
       setStatusState({ kind: payload.kind, text });
 
       if (payload.kind === "error") {
-        onError(payload.message || "Не удалось выполнить действие.");
-      } else {
-        onClearError();
-      }
-
-      if (payload.kind === "inserted" || payload.kind === "copied") {
+        timerRef.current = window.setTimeout(
+          () => setStatus({ kind: "ready" }),
+          2000,
+        );
+      } else if (payload.kind === "inserted" || payload.kind === "copied") {
         timerRef.current = window.setTimeout(
           () => setStatus({ kind: "ready" }),
           2400,
         );
       }
     },
-    [onError, onClearError],
+    [],
   );
 
   useEffect(() => {
@@ -69,7 +67,7 @@ export function useStatus(
         unlisten = fn;
       })
       .catch(() => {
-        onError("Не удалось подключить отображение состояния.");
+        onConnectionError("Не удалось подключить отображение состояния.");
       });
 
     return () => {
@@ -77,7 +75,7 @@ export function useStatus(
       unlisten?.();
       if (timerRef.current) window.clearTimeout(timerRef.current);
     };
-  }, [setStatus, onError]);
+  }, [setStatus, onConnectionError]);
 
   return status;
 }

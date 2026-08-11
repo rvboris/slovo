@@ -6,6 +6,7 @@ import { useStatus } from "@/hooks/useStatus";
 import { useShortcutStatus } from "@/hooks/useShortcutStatus";
 import { usePermissionSetup } from "@/hooks/usePermissionSetup";
 import { useInputDevices } from "@/hooks/useInputDevices";
+import { useServerAvailability } from "@/hooks/useServerAvailability";
 import { StatusHeader } from "@/components/StatusHeader";
 import { HotkeySetting } from "@/components/HotkeySetting";
 import { ServerUrlSetting } from "@/components/ServerUrlSetting";
@@ -57,8 +58,13 @@ export default function App() {
     updateSetting,
   } = useSettings({ onError: showError, onClearError: hideError });
 
+  const serverAvailability = useServerAvailability(
+    settings.serverUrl,
+    settingsLoaded,
+  );
+
   // Status
-  const status = useStatus(showError, hideError);
+  const status = useStatus(showError);
 
   // Permission setup
   const permission = usePermissionSetup();
@@ -84,10 +90,11 @@ export default function App() {
   });
 
   // Input devices
-  const { options: deviceOptions } = useInputDevices(
-    settings.inputDevice,
-    showError,
-  );
+  const {
+    options: deviceOptions,
+    load: loadInputDevices,
+    isLoading: areInputDevicesLoading,
+  } = useInputDevices(settings.inputDevice, showError);
 
   // Hotkey
   const handleHotkeySave = useCallback(
@@ -131,7 +138,7 @@ export default function App() {
   );
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-[520px] flex-col gap-5 px-6 py-6">
+    <main className="mx-auto flex h-dvh w-full max-w-[520px] flex-col gap-5 px-6 py-6 overflow-hidden">
       <StatusHeader kind={status.kind} text={status.text} />
 
       <div className="flex flex-col gap-6 flex-1 min-h-0">
@@ -141,8 +148,6 @@ export default function App() {
           captureMessage={hotkey.captureMessage}
           hotkeyDisabled={!settingsLoaded || hotkey.isStartingCapture}
           onHotkeyClick={hotkey.handleClick}
-          onHotkeyKeyDown={hotkey.handleKeyDown}
-          onHotkeyBlur={hotkey.handleBlur}
           shortcutView={shortcutStatus.view}
           shortcutText={shortcutStatus.text}
           shortcutCanRetry={shortcutStatus.canRetry}
@@ -154,13 +159,18 @@ export default function App() {
 
         <ServerUrlSetting
           value={settings.serverUrl}
+          availability={serverAvailability.status}
           onScheduleSave={scheduleServerSave}
           onBlurSave={saveServerNow}
+          onCheckAvailability={(url) => void serverAvailability.check(url)}
+          onInvalidateAvailability={serverAvailability.invalidate}
         />
 
         <InputDeviceSetting
           value={settings.inputDevice}
           options={deviceOptions}
+          isLoading={areInputDevicesLoading}
+          onLoad={() => void loadInputDevices()}
           onChange={handleDeviceChange}
         />
 

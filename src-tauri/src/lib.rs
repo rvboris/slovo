@@ -10,8 +10,8 @@
 //!   install or revoke it.
 //! - [`app`] — tray menu, plugin wiring, and the Tauri run loop.
 //!
-//! The remaining siblings (`audio`, `output`, `portal`, `settings`,
-//! `shortcut`, `transcription`, `trigger`) are subsystem implementations.
+//! The remaining siblings (`audio`, `output`, `settings`, `shortcut`,
+//! `transcription`, `trigger`) are subsystem implementations.
 
 mod app;
 mod audio;
@@ -19,7 +19,6 @@ mod commands;
 mod hotkey;
 mod output;
 mod permissions;
-mod portal;
 mod settings;
 mod shortcut;
 mod state;

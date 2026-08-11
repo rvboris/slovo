@@ -10,8 +10,6 @@ interface HotkeySettingProps {
   captureMessage: string | null;
   hotkeyDisabled: boolean;
   onHotkeyClick: () => void;
-  onHotkeyKeyDown: (e: React.KeyboardEvent) => void;
-  onHotkeyBlur: () => void;
   shortcutView: ShortcutViewState;
   shortcutText: string;
   shortcutCanRetry: boolean;
@@ -36,8 +34,6 @@ export function HotkeySetting({
   captureMessage,
   hotkeyDisabled,
   onHotkeyClick,
-  onHotkeyKeyDown,
-  onHotkeyBlur,
   shortcutView,
   shortcutText,
   shortcutCanRetry,
@@ -57,8 +53,6 @@ export function HotkeySetting({
         aria-labelledby="hotkey-label"
         aria-pressed={isCapturing}
         onClick={onHotkeyClick}
-        onKeyDown={onHotkeyKeyDown}
-        onBlur={onHotkeyBlur}
         disabled={hotkeyDisabled}
         className={cn(
           "flex w-full min-h-[40px] flex-wrap items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors cursor-pointer",
@@ -103,7 +97,7 @@ export function HotkeySetting({
           className={cn("h-2 w-2 rounded-full flex-shrink-0", viewColor[shortcutView])}
           aria-hidden="true"
         />
-        <span className="min-w-0">{shortcutText}</span>
+        <span className="min-w-0 line-clamp-2 break-words">{shortcutText}</span>
         {shortcutCanRetry && (
           <Button
             variant="outline"

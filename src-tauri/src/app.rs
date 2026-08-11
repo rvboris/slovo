@@ -1,7 +1,6 @@
 //! Application entrypoint: tray menu, plugin wiring, and the run loop.
 
 use crate::hotkey::{canonicalize_hotkey, handle_shortcut, parse_hotkey, show_settings};
-use crate::portal;
 use crate::settings;
 use crate::shortcut::{
     detect_linux_session, BackendKind, LinuxSession, ShortcutBackendStatus, ShortcutChord,
@@ -37,6 +36,15 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 /// Panics if Tauri cannot build the application from its generated context.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // GNOME Wayland deliberately does not let ordinary toplevel windows choose
+    // their position. Use XWayland so the overlay stays at bottom center.
+    #[cfg(target_os = "linux")]
+    if std::env::var("XDG_SESSION_TYPE").as_deref() == Ok("wayland")
+        && std::env::var_os("DISPLAY").is_some()
+    {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
             show_settings(app);
@@ -55,10 +63,8 @@ pub fn run() {
                 settings::DEFAULT_HOTKEY.to_owned()
             };
 
-            // Manage AppState and the tray FIRST so the app is fully usable
-            // even if the portal startup is slow, and so that any portal
-            // hotkey events that arrive before setup() returns find the state
-            // already in place (otherwise app.state::<AppState>() panics).
+            // Manage AppState and the tray first so the app remains usable while
+            // the Wayland helper initializes asynchronously.
             #[cfg(target_os = "linux")]
             let session = detect_linux_session(
                 std::env::var("XDG_SESSION_TYPE").ok().as_deref(),
@@ -67,8 +73,7 @@ pub fn run() {
             );
             #[cfg(not(target_os = "linux"))]
             let session = LinuxSession::X11;
-            let helper_enabled = std::env::var("SLOVO_EVDEV_HOTKEYS").as_deref() == Ok("1");
-            let async_wayland = session == LinuxSession::Wayland && helper_enabled;
+            let async_wayland = session == LinuxSession::Wayland;
             let (manager, shortcut_status) = if async_wayland {
                 (
                     None,
@@ -77,19 +82,13 @@ pub fn run() {
                     },
                 )
             } else {
-                let mut manager = if session == LinuxSession::Wayland {
-                    ShortcutManager::legacy_portal()
-                } else {
-                    ShortcutManager::native()
-                };
-                if manager.kind() != BackendKind::LegacyPortal {
-                    let chord = registered_hotkey
-                        .parse::<ShortcutChord>()
-                        .map_err(|error| error.to_string())?;
-                    manager
-                        .replace(app.handle(), chord)
-                        .map_err(|error| error.to_string())?;
-                }
+                let mut manager = ShortcutManager::native();
+                let chord = registered_hotkey
+                    .parse::<ShortcutChord>()
+                    .map_err(|error| error.to_string())?;
+                manager
+                    .replace(app.handle(), chord)
+                    .map_err(|error| error.to_string())?;
                 let status = manager.status();
                 (Some(manager), status)
             };
@@ -153,18 +152,8 @@ pub fn run() {
                 }
             }
 
-            if session == LinuxSession::Wayland && !helper_enabled {
-                eprintln!("[slovo] session: wayland; starting legacy portal in background");
-                let controller = portal::PortalController::new(
-                    app.handle().clone(),
-                    settings.hotkey,
-                    "Начать или остановить диктовку".to_owned(),
-                );
-                if let Ok(mut portal) = app.state::<AppState>().portal.lock() {
-                    *portal = Some(controller);
-                }
-            } else if session == LinuxSession::Wayland {
-                eprintln!("[slovo] session: wayland; evdev helper enabled");
+            if session == LinuxSession::Wayland {
+                eprintln!("[slovo] session: wayland; initializing shortcut helper");
             } else {
                 eprintln!("[slovo] session: native global shortcut");
             }
@@ -179,11 +168,23 @@ pub fn run() {
             crate::commands::get_shortcut_backend_status,
             crate::commands::get_shortcut_permission_setup,
             crate::commands::retry_shortcut_backend,
-            crate::commands::list_input_devices
+            crate::commands::list_input_devices,
+            crate::commands::check_server_url
         ])
         .build(tauri::generate_context!())
         .expect("error while building Slovo")
         .run(|app, event| {
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { .. },
+                ..
+            } = &event
+            {
+                if label == "main" {
+                    app.exit(0);
+                }
+            }
+
             if matches!(
                 event,
                 tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }

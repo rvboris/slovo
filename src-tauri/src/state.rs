@@ -6,15 +6,17 @@
 //! cannot drift apart and so the lock-ordering surface is small and explicit.
 
 use crate::audio::AudioController;
-use crate::portal;
 use crate::settings::Settings;
 use crate::shortcut::{ShortcutBackendStatus, ShortcutManager};
 use crate::trigger::TriggerState;
 use serde::Serialize;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, Position, WebviewWindow};
+use std::time::{Duration, Instant};
+use tauri::{
+    AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, Size, WebviewWindow,
+    WebviewWindowBuilder,
+};
 
 /// Consolidated settings + registered hotkey string.
 ///
@@ -49,8 +51,7 @@ pub(crate) struct ShortcutRuntime {
 ///   2. `shortcut`   (`ShortcutRuntime`)
 ///   3. `trigger`
 ///   4. `recording`
-///   5. `portal`
-///   6. `status`
+///   5. `status`
 ///
 /// `shortcut_operations` is a plain `Mutex<()>` used purely as a serialization
 /// primitive. Initialization, retry, replace, and shutdown manager mutations
@@ -63,13 +64,14 @@ pub struct AppState {
     pub(crate) trigger: Mutex<TriggerState>,
     pub(crate) audio: AudioController,
     pub(crate) recording: Mutex<Option<Instant>>,
+    /// Non-zero while a server check is pending; newer starts replace the token.
+    pub(crate) recording_start_token: AtomicU64,
     pub(crate) shortcut: Mutex<ShortcutRuntime>,
     pub(crate) shortcut_operations: Mutex<()>,
     pub(crate) shortcut_stopping: AtomicBool,
     /// Monotonic capture token packed as `(token << 1) | active`.
     /// A token prevents a delayed end command from disabling a newer capture.
     hotkey_capture: std::sync::atomic::AtomicU64,
-    pub(crate) portal: Mutex<Option<portal::PortalController>>,
     pub(crate) status: Mutex<StatusEvent>,
 }
 
@@ -94,6 +96,48 @@ impl AppState {
         self.hotkey_capture.load(Ordering::Acquire) & 1 == 1
     }
 
+    pub(crate) fn begin_recording_start(&self) -> Option<u64> {
+        let current = self.recording_start_token.load(Ordering::Acquire);
+        if current & 1 == 1 {
+            return None;
+        }
+        let token = current.wrapping_add(1);
+        self.recording_start_token
+            .compare_exchange(current, token, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| token)
+    }
+
+    pub(crate) fn recording_start_is_current(&self, token: u64) -> bool {
+        self.recording_start_token.load(Ordering::Acquire) == token
+    }
+
+    pub(crate) fn finish_recording_start(&self, token: u64) -> bool {
+        self.recording_start_token
+            .compare_exchange(
+                token,
+                token.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            )
+            .is_ok()
+    }
+
+    pub(crate) fn cancel_recording_start(&self) {
+        let mut current = self.recording_start_token.load(Ordering::Acquire);
+        while current & 1 == 1 {
+            match self.recording_start_token.compare_exchange_weak(
+                current,
+                current.wrapping_add(1),
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return,
+                Err(observed) => current = observed,
+            }
+        }
+    }
+
     pub(crate) fn new(
         settings: Settings,
         registered_hotkey: String,
@@ -108,6 +152,7 @@ impl AppState {
             trigger: Mutex::new(TriggerState::default()),
             audio: AudioController::new(),
             recording: Mutex::new(None),
+            recording_start_token: AtomicU64::new(0),
             shortcut: Mutex::new(ShortcutRuntime {
                 manager: shortcut_manager,
                 status: shortcut_status,
@@ -116,7 +161,6 @@ impl AppState {
             shortcut_operations: Mutex::new(()),
             shortcut_stopping: AtomicBool::new(false),
             hotkey_capture: std::sync::atomic::AtomicU64::new(0),
-            portal: Mutex::new(None),
             status: Mutex::new(StatusEvent {
                 kind: StatusKind::Ready,
                 message: None,
@@ -166,32 +210,91 @@ pub(crate) fn emit_status_event(app: &AppHandle, event: StatusEvent) {
 }
 
 fn manage_recording_overlay(app: &AppHandle, event: &StatusEvent) {
-    let Some(window) = app.get_webview_window("recording-overlay") else {
-        return;
-    };
     let result = match event.kind {
-        StatusKind::Recording => show_recording_overlay(&window),
-        _ => hide_recording_overlay(&window),
+        StatusKind::Recording | StatusKind::Error => {
+            get_or_create_recording_overlay(app).and_then(|window| show_recording_overlay(&window))
+        }
+        _ => app
+            .get_webview_window("recording-overlay")
+            .map_or(Ok(()), |window| hide_recording_overlay(&window)),
     };
     if let Err(error) = result {
         eprintln!("[slovo] recording overlay error: {error}");
     }
+
+    if matches!(event.kind, StatusKind::Error) {
+        let app = app.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(2)).await;
+            let still_error = app
+                .state::<AppState>()
+                .status
+                .lock()
+                .is_ok_and(|status| matches!(status.kind, StatusKind::Error));
+            if still_error {
+                if let Some(window) = app.get_webview_window("recording-overlay") {
+                    if let Err(error) = hide_recording_overlay(&window) {
+                        eprintln!("[slovo] recording overlay error: {error}");
+                    }
+                }
+            }
+        });
+    }
+}
+
+fn get_or_create_recording_overlay(app: &AppHandle) -> Result<WebviewWindow, String> {
+    if let Some(window) = app.get_webview_window("recording-overlay") {
+        return Ok(window);
+    }
+
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|config| config.label == "recording-overlay")
+        .ok_or_else(|| "recording overlay config not found".to_owned())?;
+
+    WebviewWindowBuilder::from_config(app, config)
+        .map_err(|error| format!("cannot configure recording overlay: {error}"))?
+        .visible(false)
+        .focusable(false)
+        .build()
+        .map_err(|error| format!("cannot build recording overlay: {error}"))
 }
 
 fn show_recording_overlay(window: &WebviewWindow) -> Result<(), String> {
+    const OVERLAY_W: f64 = 172.0;
+    const OVERLAY_H: f64 = 48.0;
+
+    // Do not trust a compositor-restored/default geometry: the card fills this
+    // surface, so a stale square window turns the rounded card into a huge disk.
+    window
+        .set_size(Size::Logical(LogicalSize::new(OVERLAY_W, OVERLAY_H)))
+        .map_err(|error| format!("cannot size recording overlay: {error}"))?;
+
     // Position computation is harmless on X11; on GNOME/Mutter (Wayland) the
     // compositor places the surface itself and `set_position` is a no-op.
     if let Some(monitor) = window
         .primary_monitor()
         .map_err(|error| format!("cannot get primary monitor: {error}"))?
     {
-        let size = monitor.size();
-        let monitor_w = i32::try_from(size.width)
+        let monitor_size = monitor.size();
+        let monitor_position = monitor.position();
+        // Use the requested logical size scaled to physical pixels instead of
+        // querying outer_size(): on XWayland the previous set_size may not have
+        // taken effect yet, so outer_size() returns the stale default geometry
+        // and the first-show position ends up shifted.
+        let scale = monitor.scale_factor();
+        let window_w = (OVERLAY_W * scale).round() as i32;
+        let window_h = (OVERLAY_H * scale).round() as i32;
+        let monitor_w = i32::try_from(monitor_size.width)
             .map_err(|_| "primary monitor width exceeds supported range".to_owned())?;
-        let monitor_h = i32::try_from(size.height)
+        let monitor_h = i32::try_from(monitor_size.height)
             .map_err(|_| "primary monitor height exceeds supported range".to_owned())?;
-        let x = (monitor_w - 184) / 2;
-        let y = monitor_h - 48 - 48;
+        let bottom_margin = (28.0 * scale).round() as i32;
+        let x = monitor_position.x + (monitor_w - window_w) / 2;
+        let y = monitor_position.y + monitor_h - window_h - bottom_margin;
         window
             .set_position(Position::Physical(PhysicalPosition { x, y }))
             .map_err(|error| format!("cannot position recording overlay: {error}"))?;
@@ -207,9 +310,6 @@ fn show_recording_overlay(window: &WebviewWindow) -> Result<(), String> {
     window
         .show()
         .map_err(|error| format!("cannot show recording overlay: {error}"))?;
-    window
-        .set_resizable(false)
-        .map_err(|error| format!("cannot make recording overlay non-resizable: {error}"))?;
     Ok(())
 }
 
@@ -563,6 +663,30 @@ mod tests {
                 backend: crate::shortcut::BackendKind::WaylandHelper,
             },
         )
+    }
+
+    #[test]
+    fn recording_start_allows_one_pending_check_and_can_cancel_it() {
+        let state = test_state();
+        let token = state.begin_recording_start().expect("first check starts");
+
+        assert!(state.begin_recording_start().is_none());
+        assert!(state.recording_start_is_current(token));
+
+        state.cancel_recording_start();
+        assert!(!state.recording_start_is_current(token));
+        assert!(!state.finish_recording_start(token));
+        assert!(state.begin_recording_start().is_some());
+    }
+
+    #[test]
+    fn recording_start_token_can_be_finished_once() {
+        let state = test_state();
+        let token = state.begin_recording_start().expect("check starts");
+
+        assert!(state.finish_recording_start(token));
+        assert!(!state.finish_recording_start(token));
+        assert!(state.begin_recording_start().is_some());
     }
 
     #[test]

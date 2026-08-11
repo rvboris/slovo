@@ -40,8 +40,6 @@ function mapPayloadToStatus(
   payload: ShortcutBackendStatusPayload,
 ): Omit<ShortcutStatus, "isBusy"> {
   const state = payload.state;
-  const backend = payload.backend;
-  const isLegacy = backend === "legacy-portal";
 
   let view: ShortcutViewState;
   let text: string;
@@ -52,15 +50,11 @@ function mapPayloadToStatus(
     case "starting":
     case "restarting":
       view = "preparing";
-      text = isLegacy
-        ? "Запускаем системное сочетание…"
-        : "Готовим глобальное сочетание…";
+      text = "Готовим глобальное сочетание…";
       break;
     case "active":
       view = "active";
-      text = isLegacy
-        ? "Системное сочетание активно"
-        : `Сочетание активно${shortcutDeviceLabel(payload.deviceCount)}`;
+      text = `Сочетание активно${shortcutDeviceLabel(payload.deviceCount)}`;
       break;
     case "permission-denied":
       view = "warning";

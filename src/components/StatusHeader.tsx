@@ -19,21 +19,21 @@ const badgeVariant: Record<StatusKind, "default" | "secondary" | "destructive" |
 export function StatusHeader({ kind, text }: StatusHeaderProps) {
   return (
     <header className="flex items-center justify-between gap-4">
-      <div className="flex items-center gap-3">
+      <div className="flex shrink-0 items-center gap-3">
         <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary text-primary-foreground">
           <Mic className="h-5 w-5" />
         </div>
         <h1 className="text-base font-bold tracking-tight">Слово</h1>
       </div>
-      <div role="status" aria-live="polite" aria-atomic="true">
+      <div className="min-w-0 max-w-[60%]" role="status" aria-live="polite" aria-atomic="true">
         <Badge
           variant={badgeVariant[kind]}
           className={
             kind === "recording"
-              ? "animate-pulse"
+              ? "max-w-full truncate animate-pulse"
               : kind === "transcribing"
-                ? "animate-pulse"
-                : ""
+                ? "max-w-full truncate animate-pulse"
+                : "max-w-full truncate"
           }
         >
           {text}

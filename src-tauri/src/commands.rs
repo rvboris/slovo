@@ -29,8 +29,15 @@ pub fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-pub fn list_input_devices() -> Result<Vec<audio::InputDevice>, String> {
-    audio::list_input_devices()
+pub async fn list_input_devices() -> Result<Vec<audio::InputDevice>, String> {
+    tauri::async_runtime::spawn_blocking(audio::list_input_devices)
+        .await
+        .map_err(|error| format!("internal error while listing input devices: {error}"))?
+}
+
+#[tauri::command]
+pub async fn check_server_url(server_url: String) -> Result<(), String> {
+    crate::transcription::check_server(&server_url).await
 }
 
 #[tauri::command]
@@ -190,29 +197,17 @@ pub fn update_settings(app: AppHandle, settings: Settings) -> Result<Settings, S
         .status
         .backend();
     if next.hotkey != old_hotkey {
-        if manager_kind == BackendKind::LegacyPortal {
-            if let Ok(portal) = state.portal.lock() {
-                if let Some(controller) = portal.as_ref() {
-                    controller.restart(
-                        app.clone(),
-                        next.hotkey.clone(),
-                        "Начать или остановить диктовку".to_owned(),
-                    );
-                }
-            }
-        } else {
-            let result = with_shortcut_manager(&state, |manager| {
-                let result = manager.replace(&app, new_chord);
-                let status = manager.status();
-                (result, status)
-            })?;
-            set_shortcut_status(&app, result.1);
-            result.0.map_err(|error| error.to_string())?;
-        }
+        let result = with_shortcut_manager(&state, |manager| {
+            let result = manager.replace(&app, new_chord);
+            let status = manager.status();
+            (result, status)
+        })?;
+        set_shortcut_status(&app, result.1);
+        result.0.map_err(|error| error.to_string())?;
     }
 
     if let Err(error) = settings::save(&app, &next) {
-        if next.hotkey != old_hotkey && manager_kind != BackendKind::LegacyPortal {
+        if next.hotkey != old_hotkey {
             let old_chord = old_hotkey
                 .parse::<ShortcutChord>()
                 .map_err(|parse_error| parse_error.to_string())?;
