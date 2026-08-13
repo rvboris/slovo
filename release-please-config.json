@@ -5,7 +5,12 @@
       "release-type": "rust",
       "package-name": "slovo",
       "changelog-path": "CHANGELOG.md",
-      "versioning": "default"
+      "versioning": "default",
+      "extra-files": [
+        "package.json",
+        "src-tauri/Cargo.toml",
+        "src-tauri/tauri.conf.json"
+      ]
     }
   }
 }
