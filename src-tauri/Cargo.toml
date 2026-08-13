@@ -16,7 +16,7 @@ unreachable_pub = "allow"
 
 [package]
 name = "homeborismygitslovo"
-version = "0.2.0"
+version = "0.3.0"
 description = "Linux-first push-to-talk transcription"
 authors = ["Slovo contributors"]
 edition = "2021"
