@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/rvboris/slovo/compare/slovo-v0.4.0...slovo-v0.4.1) (2026-08-13)
+
+
+### Bug Fixes
+
+* simplify logo glow and window title ([8a17951](https://github.com/rvboris/slovo/commit/8a17951002866c24f61c38e9b071b552d7fd0c9a))
+
 ## [0.4.0](https://github.com/rvboris/slovo/compare/slovo-v0.3.0...slovo-v0.4.0) (2026-08-13)
 
 
