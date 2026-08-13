@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/rvboris/slovo/compare/slovo-v0.2.0...slovo-v0.3.0) (2026-08-13)
+
+
+### Features
+
+* redesign UI — liquid-glass logo, canvas waveform overlay, theme toggle ([c8d2619](https://github.com/rvboris/slovo/commit/c8d26193cac5a3d2453be724efb712392a3a0de1))
+
 ## [0.2.0](https://github.com/rvboris/slovo/compare/slovo-v0.1.0...slovo-v0.2.0) (2026-08-13)
 
 
