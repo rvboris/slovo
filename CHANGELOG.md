@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/rvboris/slovo/compare/slovo-v0.3.0...slovo-v0.4.0) (2026-08-13)
+
+
+### Features
+
+* update application icon ([b71cdf7](https://github.com/rvboris/slovo/commit/b71cdf70c454c875d154a197126bf219bd8141d2))
+
 ## [0.3.0](https://github.com/rvboris/slovo/compare/slovo-v0.2.0...slovo-v0.3.0) (2026-08-13)
 
 
