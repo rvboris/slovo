@@ -159,93 +159,23 @@ body::before {
     animation: none;
     transform: scaleY(0.78);              /* calm mid-level rest pose */
   }
+  .slovo-chip { animation: none; }
   .slovo-bloom { display: none; }         /* no ambient pulse when reduced */
 }
 
-/* ───────────────────────────────────────────────────────────────
-   Liquid-glass logo chip — frosted, refractive, lens-like.
-   backdrop-filter for translucency, inset highlights for tonal depth
-   (top light / bottom dark), ::before specular sheen, ::after faint
-   chromatic edge, outer indigo glow so it reads as a light source.
-   Indigo waveform bars glow through the glass. ─────────────────── */
+/* Glow follows the SVG waveforms instead of the square layout wrapper. */
 .slovo-chip {
   position: relative;
-  isolation: isolate;                  /* keep pseudo-layers local */
-  background: oklch(1 0 0 / 0.12);     /* frosted base (light) */
-  border: 1px solid oklch(1 0 0 / 0.22);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.45),      /* top specular edge */
-    inset 0 -1px 2px oklch(0 0 0 / 0.18),   /* bottom shadow edge */
-    0 8px 24px oklch(0 0 0 / 0.18),         /* drop depth */
-    0 0 24px oklch(0.55 0.22 280 / 0.35);   /* indigo glow */
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  backdrop-filter: blur(14px) saturate(160%);
 }
-.dark .slovo-chip {
-  background: oklch(1 0 0 / 0.08);
-  border-color: oklch(1 0 0 / 0.18);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 0.35),
-    inset 0 -1px 2px oklch(0 0 0 / 0.40),
-    0 8px 24px oklch(0 0 0 / 0.45),
-    0 0 28px oklch(0.65 0.22 280 / 0.45);
+.slovo-mark {
+  filter: drop-shadow(0 0 5px oklch(0.55 0.22 280 / 0.70))
+    drop-shadow(0 0 10px oklch(0.55 0.22 280 / 0.35));
+}
+.dark .slovo-mark {
+  filter: drop-shadow(0 0 5px oklch(0.65 0.22 280 / 0.85))
+    drop-shadow(0 0 11px oklch(0.65 0.22 280 / 0.45));
 }
 
-/* Specular wet sheen — diagonal light streak, screen-blended over glass */
-.slovo-chip::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(
-    115deg,
-    oklch(1 0 0 / 0.30),
-    transparent 28% 72%,
-    oklch(1 0 0 / 0.10)
-  );
-  mix-blend-mode: screen;
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* Chromatic lensing edge — offset cyan/red hairlines for refraction */
-.slovo-chip::after {
-  content: "";
-  position: absolute;
-  inset: -1px;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    135deg,
-    oklch(0.7 0.15 200 / 0.16),
-    transparent 40% 60%,
-    oklch(0.7 0.18 25 / 0.14)
-  );
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-}
-
-/* Fallback: no backdrop-filter → layered tonal gradient for depth */
-@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .slovo-chip {
-    background: linear-gradient(
-      160deg,
-      oklch(0.92 0.004 250 / 0.85),
-      oklch(0.82 0.004 250 / 0.92)
-    );
-  }
-  .dark .slovo-chip {
-    background: linear-gradient(
-      160deg,
-      oklch(0.28 0.006 250 / 0.85),
-      oklch(0.18 0.005 250 / 0.92)
-    );
-  }
-}
 
 /* ───────────────────────────────────────────────────────────────
    Liquid bloom — soft luminous orbs swell from the chip center and

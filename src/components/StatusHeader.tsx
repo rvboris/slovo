@@ -63,7 +63,7 @@ export function StatusHeader({ kind, text, theme, onToggleTheme }: StatusHeaderP
         </div>
         {/* Liquid-glass chip: frosted, refractive, with specular sheen
             and a chromatic edge (styled via .slovo-chip in index.css). */}
-        <div className="slovo-chip flex h-9 w-9 items-center justify-center rounded-2xl">
+        <div className="slovo-chip flex h-9 w-9 items-center justify-center">
           <SlovoMark />
         </div>
         <h1 className="relative z-10 text-base font-bold tracking-tight">Слово</h1>
