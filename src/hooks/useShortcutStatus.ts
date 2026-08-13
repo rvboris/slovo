@@ -21,21 +21,6 @@ interface UseShortcutStatusOptions {
   onPermissionDenied: (canSetup: boolean) => void;
 }
 
-function shortcutDeviceLabel(count?: number): string {
-  if (!count || count <= 0) return "";
-  const lastTwo = count % 100;
-  const last = count % 10;
-  const word =
-    lastTwo >= 11 && lastTwo <= 14
-      ? "устройств"
-      : last === 1
-        ? "устройство"
-        : last >= 2 && last <= 4
-          ? "устройства"
-          : "устройств";
-  return ` · ${count} ${word}`;
-}
-
 function mapPayloadToStatus(
   payload: ShortcutBackendStatusPayload,
 ): Omit<ShortcutStatus, "isBusy"> {
@@ -54,7 +39,7 @@ function mapPayloadToStatus(
       break;
     case "active":
       view = "active";
-      text = `Сочетание активно${shortcutDeviceLabel(payload.deviceCount)}`;
+      text = "Сочетание активно";
       break;
     case "permission-denied":
       view = "warning";

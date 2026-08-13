@@ -57,12 +57,12 @@ export function HotkeySetting({
         className={cn(
           "flex w-full min-h-[40px] flex-wrap items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors cursor-pointer",
           "hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-          isCapturing && "border-ring bg-accent",
+          isCapturing && "border-ring bg-accent text-accent-foreground",
           hotkeyDisabled && "cursor-not-allowed opacity-50",
         )}
       >
         {captureMessage ? (
-          <span className="font-semibold text-sm text-muted-foreground">
+          <span className="font-semibold text-sm text-muted-foreground data-[capture]:text-accent-foreground/80" data-capture={isCapturing || undefined}>
             {captureMessage}
           </span>
         ) : (
@@ -70,16 +70,16 @@ export function HotkeySetting({
             {parts.map((part, i) => (
               <span key={part} className="inline-flex items-center gap-1">
                 {i > 0 && (
-                  <span className="text-muted-foreground font-normal">+</span>
+                  <span className="font-normal text-muted-foreground data-[capture]:text-accent-foreground/60" data-capture={isCapturing || undefined}>+</span>
                 )}
-                <kbd className="inline-block rounded-sm border border-border bg-muted px-1.5 py-0.5 text-xs font-semibold">
+                <kbd className="inline-block rounded-sm border px-1.5 py-0.5 text-xs font-semibold border-border bg-muted data-[capture]:border-accent-foreground/25 data-[capture]:bg-accent-foreground/15 data-[capture]:text-accent-foreground" data-capture={isCapturing || undefined}>
                   {displayPart(part)}
                 </kbd>
               </span>
             ))}
           </span>
         )}
-        <span className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+        <span className="ml-auto text-xs text-muted-foreground data-[capture]:text-accent-foreground/70 whitespace-nowrap" data-capture={isCapturing || undefined}>
           {isCapturing
             ? "Escape — отменить"
             : "Нажмите, чтобы изменить"}

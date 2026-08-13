@@ -17,7 +17,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
   const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
   const [isLoaded, setIsLoaded] = useState(false);
   const [saveState, setSaveState] = useState<{ text: string; kind: SaveKind }>({
-    text: "Изменения сохраняются автоматически",
+    text: "",
     kind: "idle",
   });
 
@@ -58,7 +58,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
                 revision === revisionRef.current &&
                 saveState.text === "Изменения сохранены"
               ) {
-                setSaveStateHelper("Изменения сохраняются автоматически");
+                setSaveStateHelper("");
               }
             }, 1800);
           }

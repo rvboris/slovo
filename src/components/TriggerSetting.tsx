@@ -21,27 +21,30 @@ export function TriggerSetting({ value, onChange }: TriggerSettingProps) {
       <RadioGroup
         value={value}
         onValueChange={(v) => onChange(v as TriggerType)}
-        className="grid grid-cols-3 gap-0.5 rounded-lg bg-muted p-0.5"
+        className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
         aria-label="Тип срабатывания"
       >
-        {options.map((opt) => (
-          <label
-            key={opt.value}
-            className={cn(
-              "relative flex items-center justify-center rounded-md px-3 py-1.5 text-sm font-semibold cursor-pointer transition-colors",
-              value === opt.value
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <RadioGroupItem
-              value={opt.value}
-              className="sr-only"
-              aria-label={opt.label}
-            />
-            {opt.label}
-          </label>
-        ))}
+        {options.map((opt) => {
+          const active = value === opt.value;
+          return (
+            <label
+              key={opt.value}
+              className={cn(
+                "relative flex items-center justify-center rounded-lg px-3 py-2 text-sm font-bold cursor-pointer transition-all duration-200",
+                active
+                  ? "bg-[var(--accent-vivid)] text-white shadow-[0_4px_14px_oklch(0.55_0.22_280/0.4)]"
+                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+              )}
+            >
+              <RadioGroupItem
+                value={opt.value}
+                className="sr-only"
+                aria-label={opt.label}
+              />
+              {opt.label}
+            </label>
+          );
+        })}
       </RadioGroup>
       <p className="text-xs text-muted-foreground">
         {triggerDescriptions[value]}

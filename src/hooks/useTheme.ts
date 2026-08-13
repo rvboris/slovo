@@ -1,21 +1,31 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-export function useTheme(): void {
-  const cleanupRef = useRef<(() => void) | null>(null);
+export type Theme = "light" | "dark";
+
+const STORAGE_KEY = "theme";
+
+function initialTheme(): Theme {
+  const stored = localStorage.getItem(STORAGE_KEY);
+  if (stored === "light" || stored === "dark") return stored;
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+}
+
+export function useTheme() {
+  const [theme, setTheme] = useState<Theme>(initialTheme);
 
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const apply = (dark: boolean) => {
-      document.documentElement.classList.toggle("dark", dark);
-    };
-    apply(mq.matches);
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  }, [theme]);
 
-    const handler = (e: MediaQueryListEvent) => apply(e.matches);
-    mq.addEventListener("change", handler);
-    cleanupRef.current = () => mq.removeEventListener("change", handler);
-
-    return () => {
-      cleanupRef.current?.();
-    };
+  const toggleTheme = useCallback(() => {
+    setTheme((current) => {
+      const next = current === "dark" ? "light" : "dark";
+      localStorage.setItem(STORAGE_KEY, next);
+      return next;
+    });
   }, []);
+
+  return { theme, toggleTheme };
 }

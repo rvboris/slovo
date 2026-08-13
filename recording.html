@@ -14,11 +14,12 @@
         role="status"
         aria-label="Идёт запись"
       >
+        <canvas id="voice-canvas" class="voice-canvas" aria-hidden="true"></canvas>
+        <div class="scrim" aria-hidden="true"></div>
         <div class="recording-row">
           <span class="recording-dot" aria-hidden="true"></span>
           <time id="recording-time" datetime="PT0S">00:00</time>
         </div>
-        <div id="voice-level" class="voice-level" aria-hidden="true"></div>
       </div>
       <div
         id="error-state"

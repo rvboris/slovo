@@ -21,6 +21,8 @@ const indicatorStyle: Record<SaveKind, string> = {
 };
 
 export function SaveIndicator({ text, kind }: SaveIndicatorProps) {
+  if (kind === "idle") return null;
+
   return (
     <footer className="mt-auto flex shrink-0 items-center justify-center" data-save-kind={kind}>
       <span

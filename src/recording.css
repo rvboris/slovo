@@ -29,7 +29,7 @@ body {
   display: grid;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 22px;
-  background: linear-gradient(145deg, rgba(34, 36, 43, 0.97), rgba(18, 20, 25, 0.97));
+  background: linear-gradient(145deg, rgba(34, 36, 43, 0.92), rgba(18, 20, 25, 0.94));
   color: #f4f5f7;
   /* ponytail: no outer box-shadow — the window clips it and on
      XWayland/WebKitGTK the clipped shadow composites against an opaque
@@ -39,44 +39,29 @@ body {
   user-select: none;
   -webkit-user-select: none;
   position: relative;
+  isolation: isolate;
 }
 
-/* Voice-level meter: one continuous fill hugging the pill's bottom edge.
-   Reads instantly as "how loud" without equalizer-bar gimmickry.
-   --lvl is a 0..100% inline custom property driven by recording.ts. */
-.voice-level {
+/* Sound-reactive canvas: scrolling amplitude waveform drawn behind content.
+   recording.ts pushes EMA-smoothed levels into a ring buffer and renders
+   via requestAnimationFrame only while recording is visible. */
+.voice-canvas {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 3px;
-  pointer-events: none;
-  background: rgba(255, 255, 255, 0.05);
-}
-
-/* Hide the meter entirely outside the recording state — error and loading
-   pills stay uncluttered. The fill itself already collapses to 0 via
-   resetVoiceLevel(); this also removes the faint baseline track. */
-.recording-indicator.is-error .voice-level,
-.recording-indicator.is-loading .voice-level {
-  display: none;
-}
-
-.voice-level::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: 0;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  width: var(--lvl, 0%);
-  border-radius: 0 2px 2px 0;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 77, 94, 0.95),
-    rgba(255, 138, 92, 0.95)
-  );
-  box-shadow: 0 0 6px rgba(255, 77, 94, 0.35);
-  transition: width 90ms linear;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 220ms ease;
+}
+
+.recording-indicator:not(.is-loading):not(.is-error) .voice-canvas {
+  opacity: 1;
+}
+
+.scrim {
+  display: none;
 }
 
 .indicator-state {
@@ -93,10 +78,11 @@ body {
 .recording-state {
   display: grid;
   place-items: center;
-  padding-bottom: 3px;
 }
 
 .recording-row {
+  position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -188,14 +174,7 @@ body {
     color: #ffffff;
   }
 
-  .voice-level {
-    background: rgba(25, 30, 42, 0.06);
-  }
 
-  .voice-level::after {
-    background: linear-gradient(90deg, #e83a4d, #e8743c);
-    box-shadow: 0 0 6px rgba(207, 51, 68, 0.28);
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -203,9 +182,6 @@ body {
     animation: none;
   }
 
-  /* Keep the level readable; smoothing still comes from the TS filter,
-     just stop CSS from animating between steps. */
-  .voice-level::after {
-    transition: none;
-  }
+  /* The waveform canvas still renders but recording.ts freezes the scroll
+     and only re-paints on level change — see REDUCED_MOTION in recording.ts. */
 }

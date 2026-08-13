@@ -3,48 +3,55 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
+  /* 2026 monochrome base + single vivid accent (electric indigo).
+     Crisp neutral light, near-black ink, mid-gray muted that clears WCAG AA. */
+  --background: oklch(0.985 0.002 250);     /* near-white, faint cool */
+  --foreground: oklch(0.18 0.004 250);      /* near-black ink */
+  --card: oklch(1 0 0);                     /* pure white surface */
+  --card-foreground: oklch(0.18 0.004 250);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --radius: 0.625rem;
+  --popover-foreground: oklch(0.18 0.004 250);
+  --primary: oklch(0.18 0.004 250);         /* ink buttons */
+  --primary-foreground: oklch(0.985 0.002 250);
+  --secondary: oklch(0.96 0.003 250);
+  --secondary-foreground: oklch(0.18 0.004 250);
+  --muted: oklch(0.965 0.003 250);          /* tonal step */
+  --muted-foreground: oklch(0.45 0.006 250);/* >= 4.5:1 on bg — AA */
+  --accent: var(--accent-vivid);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.58 0.22 25);
+  --destructive-foreground: oklch(0.99 0 0);
+  --border: oklch(0.20 0.004 250 / 0.14);   /* visible hairline */
+  --input: oklch(0.20 0.004 250 / 0.20);    /* inputs read clearly */
+  --ring: var(--accent-vivid);
+  --radius: 0.5625rem;
+  --accent-vivid: oklch(0.55 0.22 280);     /* electric indigo */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-out-fast: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  /* Warm charcoal (not pure black) with tonal steps; light ink, same indigo. */
+  --background: oklch(0.155 0.005 250);     /* #121214-ish charcoal */
+  --foreground: oklch(0.96 0.003 250);
+  --card: oklch(0.185 0.005 250);           /* one tonal step up */
+  --card-foreground: oklch(0.96 0.003 250);
+  --popover: oklch(0.205 0.006 250);
+  --popover-foreground: oklch(0.96 0.003 250);
+  --primary: oklch(0.96 0.003 250);
+  --primary-foreground: oklch(0.155 0.005 250);
+  --secondary: oklch(0.235 0.006 250);
+  --secondary-foreground: oklch(0.96 0.003 250);
+  --muted: oklch(0.215 0.005 250);
+  --muted-foreground: oklch(0.72 0.006 250);/* >= 4.5:1 on charcoal — AA */
+  --accent: var(--accent-vivid);
+  --accent-foreground: oklch(0.99 0 0);
+  --destructive: oklch(0.68 0.20 25);
+  --destructive-foreground: oklch(0.15 0.005 250);
+  --border: oklch(0.96 0.003 250 / 0.14);
+  --input: oklch(0.96 0.003 250 / 0.20);
+  --ring: var(--accent-vivid);
+  --accent-vivid: oklch(0.65 0.22 280);     /* brighter indigo on dark */
 }
 
 @theme inline {
@@ -78,13 +85,216 @@ body {
   overflow: hidden;
 }
 
+/* Opaque base on html so any pseudo-elements can layer above it. */
+html {
+  background: var(--background);
+}
+
 body {
-  @apply bg-background text-foreground;
-  font-family: "Geist", "Inter", system-ui, -apple-system, sans-serif;
+  color: var(--foreground);
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", "Segoe UI Variable", sans-serif;
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  letter-spacing: -0.011em;
+  /* snappy micro-spring feel on native-ish controls */
+  --tw-ease: var(--ease-spring);
 }
 
 #root {
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  z-index: 0;
+}
+
+  /* Single very faint corner glow of the accent — atmosphere, not noise.
+     Kept under 8% and pinned top-right so it never sits behind inputs. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(
+    60% 50% at 92% 0%,
+    oklch(0.55 0.22 280 / 0.06),
+    transparent 70%
+  );
+}
+.dark body::before {
+  background: radial-gradient(
+    60% 50% at 92% 0%,
+    oklch(0.65 0.22 280 / 0.08),
+    transparent 70%
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────
+   "Слово" logo animation — idle voice-equalizer breathe.
+   Five waveform bars scale vertically from their base, staggered so
+   the group reads as a living voice/word. Each bar loops seamlessly
+   (0% state == 100% state). Period ~2.4s, calm not frantic.
+   Reduced-motion: freeze the bars at rest. ────────────────────── */
+.slovo-mark .slovo-bar {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;     /* scale up from the bar's base */
+  animation: slovo-breathe 2.4s var(--ease-out-fast) infinite;
+  will-change: transform;
+}
+/* stagger the five bars so the wave travels across the mark */
+.slovo-mark .slovo-bar-1 { animation-delay: -0.0s; }
+.slovo-mark .slovo-bar-2 { animation-delay: -0.3s; }
+.slovo-mark .slovo-bar-3 { animation-delay: -0.6s; }
+.slovo-mark .slovo-bar-4 { animation-delay: -0.9s; }
+.slovo-mark .slovo-bar-5 { animation-delay: -1.2s; }
+
+@keyframes slovo-breathe {
+  0%, 100% { transform: scaleY(0.55); }   /* rests at a low level… */
+  40%      { transform: scaleY(1);    }   /* …peaks like a syllable… */
+  70%      { transform: scaleY(0.7);  }   /* …then settles back */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slovo-mark .slovo-bar {
+    animation: none;
+    transform: scaleY(0.78);              /* calm mid-level rest pose */
+  }
+  .slovo-bloom { display: none; }         /* no ambient pulse when reduced */
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Liquid-glass logo chip — frosted, refractive, lens-like.
+   backdrop-filter for translucency, inset highlights for tonal depth
+   (top light / bottom dark), ::before specular sheen, ::after faint
+   chromatic edge, outer indigo glow so it reads as a light source.
+   Indigo waveform bars glow through the glass. ─────────────────── */
+.slovo-chip {
+  position: relative;
+  isolation: isolate;                  /* keep pseudo-layers local */
+  background: oklch(1 0 0 / 0.12);     /* frosted base (light) */
+  border: 1px solid oklch(1 0 0 / 0.22);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.45),      /* top specular edge */
+    inset 0 -1px 2px oklch(0 0 0 / 0.18),   /* bottom shadow edge */
+    0 8px 24px oklch(0 0 0 / 0.18),         /* drop depth */
+    0 0 24px oklch(0.55 0.22 280 / 0.35);   /* indigo glow */
+  -webkit-backdrop-filter: blur(14px) saturate(160%);
+  backdrop-filter: blur(14px) saturate(160%);
+}
+.dark .slovo-chip {
+  background: oklch(1 0 0 / 0.08);
+  border-color: oklch(1 0 0 / 0.18);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.35),
+    inset 0 -1px 2px oklch(0 0 0 / 0.40),
+    0 8px 24px oklch(0 0 0 / 0.45),
+    0 0 28px oklch(0.65 0.22 280 / 0.45);
+}
+
+/* Specular wet sheen — diagonal light streak, screen-blended over glass */
+.slovo-chip::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    115deg,
+    oklch(1 0 0 / 0.30),
+    transparent 28% 72%,
+    oklch(1 0 0 / 0.10)
+  );
+  mix-blend-mode: screen;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Chromatic lensing edge — offset cyan/red hairlines for refraction */
+.slovo-chip::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    135deg,
+    oklch(0.7 0.15 200 / 0.16),
+    transparent 40% 60%,
+    oklch(0.7 0.18 25 / 0.14)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Fallback: no backdrop-filter → layered tonal gradient for depth */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .slovo-chip {
+    background: linear-gradient(
+      160deg,
+      oklch(0.92 0.004 250 / 0.85),
+      oklch(0.82 0.004 250 / 0.92)
+    );
+  }
+  .dark .slovo-chip {
+    background: linear-gradient(
+      160deg,
+      oklch(0.28 0.006 250 / 0.85),
+      oklch(0.18 0.005 250 / 0.92)
+    );
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────
+   Liquid bloom — soft luminous orbs swell from the chip center and
+   fade, like light spreading through liquid (not a sonar ping).
+   Harmonically tied to the logo breathe (3.6s = 1.5× the 2.4s loop),
+   three orbs staggered so a fresh bloom surfaces every 1.2s. Each orb
+   is a small bounded element with filter:blur (cheap). A radial mask
+   confines the bloom to the top-left corner, fading before form rows. */
+.slovo-bloom {
+  position: absolute;
+  left: 18px;                          /* chip center */
+  top: 18px;
+  width: 0;
+  height: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.slovo-orb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 240px;
+  height: 240px;
+  margin: -120px 0 0 -120px;             /* center on source point */
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    oklch(0.55 0.22 280 / 0.28),
+    oklch(0.55 0.22 280 / 0.10) 40%,
+    transparent 72%
+  );
+  filter: blur(10px);
+  opacity: 0;
+  transform: scale(0.1);
+  /* ease-in-out-cubic for a liquid swell, not a snap */
+  animation: slovo-bloom-out 5.2s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  will-change: transform, opacity;
+}
+/* 5 orbs = continuous overlapping waves, not one lonely circle */
+.slovo-orb-1 { animation-delay: -0.0s; }
+.slovo-orb-2 { animation-delay: -1.04s; }
+.slovo-orb-3 { animation-delay: -2.08s; }
+.slovo-orb-4 { animation-delay: -3.12s; }
+.slovo-orb-5 { animation-delay: -4.16s; }
+
+@keyframes slovo-bloom-out {
+  0%   { transform: scale(0.08); opacity: 0;    }
+  20%  { opacity: 0.75; }
+  55%  { opacity: 0.35; }
+  100% { transform: scale(1.8);   opacity: 0;    }
 }
