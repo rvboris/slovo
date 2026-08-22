@@ -1,3 +1,6 @@
+//! Linux-only evdev helper; the whole crate compiles to nothing elsewhere.
+#![cfg(target_os = "linux")]
+
 use std::io::{self, Write};
 use std::sync::mpsc;
 use std::thread;

@@ -155,7 +155,11 @@ mod tests {
         let directory = std::env::temp_dir().join(format!(
             "slovo-settings-test-{}-{}",
             std::process::id(),
-            std::thread::current().name().unwrap_or("unnamed")
+            // Windows forbids ':' in file names; thread names contain "::".
+            std::thread::current()
+                .name()
+                .unwrap_or("unnamed")
+                .replace(":", "-")
         ));
         let path = directory.join("settings.json");
         let settings = Settings {

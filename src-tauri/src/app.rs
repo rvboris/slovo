@@ -2,9 +2,10 @@
 
 use crate::hotkey::{canonicalize_hotkey, handle_shortcut, parse_hotkey, show_settings};
 use crate::settings;
+#[cfg(target_os = "linux")]
+use crate::shortcut::detect_linux_session;
 use crate::shortcut::{
-    detect_linux_session, BackendKind, LinuxSession, ShortcutBackendStatus, ShortcutChord,
-    ShortcutManager,
+    BackendKind, LinuxSession, ShortcutBackendStatus, ShortcutChord, ShortcutManager,
 };
 use crate::state::{
     initialize_shortcut_manager, set_shortcut_status, shutdown_shortcut_manager, AppState,
@@ -18,14 +19,18 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
     let settings = MenuItem::with_id(app, "settings", "Настройки", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Выйти", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&settings, &quit])?;
-    TrayIconBuilder::new()
+    let mut tray = TrayIconBuilder::new()
         .menu(&menu)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "settings" => show_settings(app),
             "quit" => app.exit(0),
             _ => {}
-        })
-        .build(app)?;
+        });
+    // Without an explicit icon the tray shows a blank placeholder on Windows.
+    if let Some(icon) = app.default_window_icon() {
+        tray = tray.icon(icon.clone());
+    }
+    tray.build(app)?;
     Ok(())
 }
 
