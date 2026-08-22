@@ -136,7 +136,11 @@ mod tests {
         let directory = std::env::temp_dir().join(format!(
             "slovo-rule-test-{}-{}",
             std::process::id(),
-            std::thread::current().name().unwrap_or("unnamed")
+            // Windows forbids ':' in file names; thread names contain "::".
+            std::thread::current()
+                .name()
+                .unwrap_or("unnamed")
+                .replace(":", "-")
         ));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();

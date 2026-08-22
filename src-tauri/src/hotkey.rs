@@ -73,12 +73,20 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
 }
 
 pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
+    if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
+        eprintln!("[slovo] shortcut plugin event {shortcut:?} state={:?}", event.state());
+    }
     let app_state = app.state::<AppState>();
     let registered = match app_state.settings.lock() {
         Ok(runtime) => runtime.registered_hotkey.clone(),
         Err(_) => return,
     };
     if parse_hotkey(&registered).as_ref().ok() != Some(shortcut) {
+        if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
+            eprintln!(
+                "[slovo] shortcut event ignored: registered '{registered}' vs event {shortcut:?}"
+            );
+        }
         return;
     }
     let normalized = match event.state() {

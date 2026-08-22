@@ -75,6 +75,9 @@ pub fn copy_and_insert(text: &str) -> Result<bool, String> {
         return Ok(status.success());
     }
 
+    // `DISPLAY` exists only on X11 Linux; on Windows and macOS the native
+    // enigo backend needs no display server check.
+    #[cfg(target_os = "linux")]
     if std::env::var_os("DISPLAY").is_none() {
         return Ok(false);
     }

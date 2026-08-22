@@ -7,6 +7,7 @@
 
 use crate::audio;
 use crate::hotkey::{canonicalize_hotkey, parse_hotkey};
+#[cfg(target_os = "linux")]
 use crate::permissions::{permission_setup_in_directory, resolve_permission_setup_dir};
 use crate::settings::{self, Settings};
 use crate::shortcut::{BackendKind, ShortcutBackendStatus, ShortcutChord, ShortcutManager};
