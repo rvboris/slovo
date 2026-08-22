@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.5.0](https://github.com/rvboris/slovo/compare/slovo-v0.4.1...slovo-v0.5.0) (2026-08-22)
+
+
+### Features
+
+* **windows:** full Windows support ([f0fba69](https://github.com/rvboris/slovo/commit/f0fba6988b9dc127ea7de2c683d138a07412b140))
+* **windows:** full Windows support for build, hotkeys, and output ([acbf879](https://github.com/rvboris/slovo/commit/acbf879b802f431d15564320fcf363e0bb1b6da1))
+
+
+### Bug Fixes
+
+* **windows:** remove the recording overlay window shadow ([24fa5c3](https://github.com/rvboris/slovo/commit/24fa5c320b043af375f83fc2ce2dcdff7a21a024))
+
 ## [0.4.1](https://github.com/rvboris/slovo/compare/slovo-v0.4.0...slovo-v0.4.1) (2026-08-13)
 
 
