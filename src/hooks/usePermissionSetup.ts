@@ -1,10 +1,7 @@
-import { useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useRef, useState } from "react";
 import { Commands } from "@/lib/ipc";
-import {
-  type ShortcutPermissionSetup,
-  getErrorMessage,
-} from "@/lib/types";
+import { getErrorMessage, type ShortcutPermissionSetup } from "@/lib/types";
 
 export function usePermissionSetup() {
   const [visible, setVisible] = useState(false);
@@ -20,19 +17,17 @@ export function usePermissionSetup() {
   const loadingRef = useRef(false);
   const panelRef = useRef<HTMLElement | null>(null);
 
-  const installCommands = (setup?.installCommands ?? []).filter(
-    (line) => line && line.trim(),
+  const installCommands = (setup?.installCommands ?? []).filter((line) =>
+    line?.trim(),
   );
-  const revokeCommands = (setup?.revokeCommands ?? []).filter(
-    (line) => line && line.trim(),
+  const revokeCommands = (setup?.revokeCommands ?? []).filter((line) =>
+    line?.trim(),
   );
 
   const updateAckGate = useCallback(
     (ack: boolean, currentSetup?: ShortcutPermissionSetup | null) => {
       const s = currentSetup !== undefined ? currentSetup : setup;
-      const hasInstall = !!s?.installCommands?.some(
-        (line) => line && line.trim(),
-      );
+      const hasInstall = !!s?.installCommands?.some((line) => line?.trim());
       setCopyInstallDisabled(!ack || !hasInstall);
     },
     [setup],
@@ -62,7 +57,7 @@ export function usePermissionSetup() {
         setSetup(result);
         setStateMessage("");
         setCopyRevokeDisabled(
-          !(result.revokeCommands ?? []).some((line) => line && line.trim()),
+          !(result.revokeCommands ?? []).some((line) => line?.trim()),
         );
         updateAckGate(false, result);
       }
@@ -114,7 +109,7 @@ export function usePermissionSetup() {
       if (!setup) return;
       const source =
         kind === "install" ? setup.installCommands : setup.revokeCommands;
-      const commands = (source ?? []).filter((line) => line && line.trim());
+      const commands = (source ?? []).filter((line) => line?.trim());
       if (commands.length === 0) return;
 
       const text = commands.join("\n");

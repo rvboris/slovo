@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Events } from "@/lib/ipc";
 import {
+  formatElapsed,
   type StatusKind,
   type StatusPayload,
-  formatElapsed,
 } from "@/lib/types";
 
 interface StatusState {
@@ -30,32 +30,29 @@ export function useStatus(
   });
   const timerRef = useRef<number | undefined>(undefined);
 
-  const setStatus = useCallback(
-    (payload: StatusPayload) => {
-      if (timerRef.current) window.clearTimeout(timerRef.current);
+  const setStatus = useCallback((payload: StatusPayload) => {
+    if (timerRef.current) window.clearTimeout(timerRef.current);
 
-      const text =
-        payload.message ||
-        (payload.kind === "recording"
-          ? `Слушаю · ${formatElapsed(payload.elapsedSeconds)}`
-          : statusLabels[payload.kind]);
+    const text =
+      payload.message ||
+      (payload.kind === "recording"
+        ? `Слушаю · ${formatElapsed(payload.elapsedSeconds)}`
+        : statusLabels[payload.kind]);
 
-      setStatusState({ kind: payload.kind, text });
+    setStatusState({ kind: payload.kind, text });
 
-      if (payload.kind === "error") {
-        timerRef.current = window.setTimeout(
-          () => setStatus({ kind: "ready" }),
-          2000,
-        );
-      } else if (payload.kind === "inserted" || payload.kind === "copied") {
-        timerRef.current = window.setTimeout(
-          () => setStatus({ kind: "ready" }),
-          2400,
-        );
-      }
-    },
-    [],
-  );
+    if (payload.kind === "error") {
+      timerRef.current = window.setTimeout(
+        () => setStatus({ kind: "ready" }),
+        2000,
+      );
+    } else if (payload.kind === "inserted" || payload.kind === "copied") {
+      timerRef.current = window.setTimeout(
+        () => setStatus({ kind: "ready" }),
+        2400,
+      );
+    }
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

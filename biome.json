@@ -1,0 +1,66 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.10/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "files": {
+    "includes": [
+      "**",
+      "!src-tauri/gen",
+      "!src-tauri/target",
+      "!dist",
+      "!node_modules"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 80
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error"
+      },
+      "suspicious": {
+        "noConsole": "warn",
+        "noArrayIndexKey": "warn",
+        "noExplicitAny": "error"
+      },
+      "style": {
+        "useConst": "error",
+        "noNonNullAssertion": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    },
+    "linter": {
+      "enabled": false
+    },
+    "formatter": {
+      "enabled": false
+    }
+  }
+}

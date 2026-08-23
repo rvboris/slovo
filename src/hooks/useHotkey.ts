@@ -1,7 +1,7 @@
-import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Commands } from "@/lib/ipc";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { formatHotkey, isModifierKey } from "@/lib/hotkey";
+import { Commands } from "@/lib/ipc";
 import { getErrorMessage } from "@/lib/types";
 
 let captureToken = Date.now() * 1000;
@@ -18,7 +18,12 @@ interface UseHotkeyOptions {
   onError: (message: string) => void;
 }
 
-export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions) {
+export function useHotkey({
+  hotkey,
+  enabled,
+  onSave,
+  onError,
+}: UseHotkeyOptions) {
   const [isCapturing, setIsCapturing] = useState(false);
   const [isStartingCapture, setIsStartingCapture] = useState(false);
   const [captureMessage, setCaptureMessage] = useState<string | null>(null);
@@ -37,7 +42,9 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
     setCaptureMessage(null);
     void setBackendCapture(false, token).catch((error) => {
       if (mountedRef.current) {
-        onError(getErrorMessage(error, "Не удалось завершить захват сочетания."));
+        onError(
+          getErrorMessage(error, "Не удалось завершить захват сочетания."),
+        );
       }
     });
   }, [onError, setBackendCapture]);

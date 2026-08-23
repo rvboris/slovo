@@ -1,9 +1,9 @@
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ServerAvailability } from "@/hooks/useServerAvailability";
 import { normalizeHttpUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
 
 interface ServerUrlSettingProps {
   value: string;
@@ -124,11 +124,7 @@ export function ServerUrlSetting({
         )}
       </div>
       {error && (
-        <p
-          id="server-error"
-          className="text-xs text-destructive"
-          role="alert"
-        >
+        <p id="server-error" className="text-xs text-destructive" role="alert">
           {error}
         </p>
       )}

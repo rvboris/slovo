@@ -1,14 +1,14 @@
-import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Commands } from "@/lib/ipc";
-import { normalizeHttpUrl } from "@/lib/url";
 import {
-  type Settings,
-  type SaveKind,
   DEFAULT_SETTINGS,
-  normalizeSettings,
   getErrorMessage,
+  normalizeSettings,
+  type SaveKind,
+  type Settings,
 } from "@/lib/types";
+import { normalizeHttpUrl } from "@/lib/url";
 
 interface UseSettingsOptions {
   onError: (message: string, retry?: () => Promise<void>) => void;

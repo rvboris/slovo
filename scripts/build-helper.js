@@ -16,14 +16,12 @@
 //   1  misconfiguration / unknown target / staging failure
 //   N  forwarded from cargo when the build fails
 
-"use strict";
-
 import { spawnSync } from "node:child_process";
 import {
-  mkdirSync,
-  copyFileSync,
   chmodSync,
+  copyFileSync,
   existsSync,
+  mkdirSync,
   statSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
@@ -82,7 +80,7 @@ function parseArgs(argv) {
       opts.platformOverride = a.slice("--platform=".length);
     } else if (a === "-h" || a === "--help") {
       process.stdout.write(
-        [
+        `${[
           "Usage: node scripts/build-helper.js [--debug|--release] [--target <triple>] [--platform <os>]",
           "",
           "  --debug            Build helper in debug profile.",
@@ -90,7 +88,7 @@ function parseArgs(argv) {
           "  --target <triple>  Rust target triple (default: resolved from env/host).",
           "  --platform <os>    Override OS skip check (testing only).",
           "",
-        ].join("\n") + "\n"
+        ].join("\n")}\n`,
       );
       process.exit(0);
     } else {
@@ -119,9 +117,9 @@ function isLinuxHost(platformOverride) {
 function resolveTargetTriple(cliTarget) {
   if (cliTarget) return cliTarget;
   const cargoEnv = process.env.CARGO_BUILD_TARGET;
-  if (cargoEnv && cargoEnv.trim()) return cargoEnv.trim();
+  if (cargoEnv?.trim()) return cargoEnv.trim();
   const tauriEnv = process.env.TAURI_ENV_TARGET_TRIPLE;
-  if (tauriEnv && tauriEnv.trim()) return tauriEnv.trim();
+  if (tauriEnv?.trim()) return tauriEnv.trim();
   return hostTripleFromRustc();
 }
 
@@ -131,7 +129,7 @@ function hostTripleFromRustc() {
     fatal(
       `Could not determine target triple and rustc -vV failed: ${
         out.error ? out.error.message : out.stderr
-      }`
+      }`,
     );
   }
   const m = /host:\s*(\S+)/.exec(out.stdout);
@@ -151,11 +149,11 @@ function assertSupportedLinuxTriple(triple) {
   if (isLinuxish) {
     fatal(
       `Target triple '${triple}' looks like Linux but is not in the explicitly supported list ` +
-        `(${[...SUPPORTED_LINUX_TRIPLES].join(", ")}). Add it to SUPPORTED_LINUX_TRIPLES if intended.`
+        `(${[...SUPPORTED_LINUX_TRIPLES].join(", ")}). Add it to SUPPORTED_LINUX_TRIPLES if intended.`,
     );
   }
   fatal(
-    `Target triple '${triple}' is not a supported Linux target. slovo-input-helper is Linux-only.`
+    `Target triple '${triple}' is not a supported Linux target. slovo-input-helper is Linux-only.`,
   );
 }
 
@@ -181,7 +179,8 @@ function cargoBuild({ debug, target }) {
     stdio: "inherit",
   });
   if (result.error) fatal(`Failed to spawn cargo: ${result.error.message}`);
-  if (result.status !== 0) fatal(`cargo build failed (exit ${result.status})`, result.status);
+  if (result.status !== 0)
+    fatal(`cargo build failed (exit ${result.status})`, result.status);
 }
 
 function locateArtifact({ debug, target }) {
@@ -196,7 +195,8 @@ function stageSidecar(srcExe, triple) {
   // not throw if the dir already exists; we verify it is a directory after.
   mkdirSync(BINARIES_DIR, { recursive: true, mode: 0o755 });
   const dirStat = statSync(BINARIES_DIR);
-  if (!dirStat.isDirectory()) fatal(`${BINARIES_DIR} exists and is not a directory`);
+  if (!dirStat.isDirectory())
+    fatal(`${BINARIES_DIR} exists and is not a directory`);
   const dest = join(BINARIES_DIR, `${CARGO_BIN_NAME}-${triple}`);
   copyFileSync(srcExe, dest);
   chmodSync(dest, 0o755);
@@ -209,7 +209,9 @@ function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (!isLinuxHost(opts.platformOverride)) {
     const os = opts.platformOverride || process.platform;
-    info(`Not Linux (platform='${os}'); skipping slovo-input-helper sidecar build.`);
+    info(
+      `Not Linux (platform='${os}'); skipping slovo-input-helper sidecar build.`,
+    );
     return;
   }
   const triple = resolveTargetTriple(opts.target);

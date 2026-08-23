@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { hotkeyParts, displayPart } from "@/lib/hotkey";
+import { displayPart, hotkeyParts } from "@/lib/hotkey";
 import type { ShortcutViewState } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -62,7 +62,10 @@ export function HotkeySetting({
         )}
       >
         {captureMessage ? (
-          <span className="font-semibold text-sm text-muted-foreground data-[capture]:text-accent-foreground/80" data-capture={isCapturing || undefined}>
+          <span
+            className="font-semibold text-sm text-muted-foreground data-[capture]:text-accent-foreground/80"
+            data-capture={isCapturing || undefined}
+          >
             {captureMessage}
           </span>
         ) : (
@@ -70,19 +73,28 @@ export function HotkeySetting({
             {parts.map((part, i) => (
               <span key={part} className="inline-flex items-center gap-1">
                 {i > 0 && (
-                  <span className="font-normal text-muted-foreground data-[capture]:text-accent-foreground/60" data-capture={isCapturing || undefined}>+</span>
+                  <span
+                    className="font-normal text-muted-foreground data-[capture]:text-accent-foreground/60"
+                    data-capture={isCapturing || undefined}
+                  >
+                    +
+                  </span>
                 )}
-                <kbd className="inline-block rounded-sm border px-1.5 py-0.5 text-xs font-semibold border-border bg-muted data-[capture]:border-accent-foreground/25 data-[capture]:bg-accent-foreground/15 data-[capture]:text-accent-foreground" data-capture={isCapturing || undefined}>
+                <kbd
+                  className="inline-block rounded-sm border px-1.5 py-0.5 text-xs font-semibold border-border bg-muted data-[capture]:border-accent-foreground/25 data-[capture]:bg-accent-foreground/15 data-[capture]:text-accent-foreground"
+                  data-capture={isCapturing || undefined}
+                >
                   {displayPart(part)}
                 </kbd>
               </span>
             ))}
           </span>
         )}
-        <span className="ml-auto text-xs text-muted-foreground data-[capture]:text-accent-foreground/70 whitespace-nowrap" data-capture={isCapturing || undefined}>
-          {isCapturing
-            ? "Escape — отменить"
-            : "Нажмите, чтобы изменить"}
+        <span
+          className="ml-auto text-xs text-muted-foreground data-[capture]:text-accent-foreground/70 whitespace-nowrap"
+          data-capture={isCapturing || undefined}
+        >
+          {isCapturing ? "Escape — отменить" : "Нажмите, чтобы изменить"}
         </span>
       </button>
 
@@ -94,7 +106,10 @@ export function HotkeySetting({
         className="flex items-center flex-wrap gap-2 text-xs text-muted-foreground"
       >
         <span
-          className={cn("h-2 w-2 rounded-full flex-shrink-0", viewColor[shortcutView])}
+          className={cn(
+            "h-2 w-2 rounded-full flex-shrink-0",
+            viewColor[shortcutView],
+          )}
           aria-hidden="true"
         />
         <span className="min-w-0 line-clamp-2 break-words">{shortcutText}</span>

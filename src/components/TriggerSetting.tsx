@@ -27,6 +27,9 @@ export function TriggerSetting({ value, onChange }: TriggerSettingProps) {
         {options.map((opt) => {
           const active = value === opt.value;
           return (
+            // RadioGroupItem below renders the radio input inside this label;
+            // the linter cannot see through the component boundary.
+            // biome-ignore lint/a11y/noLabelWithoutControl: control provided by RadioGroupItem
             <label
               key={opt.value}
               className={cn(

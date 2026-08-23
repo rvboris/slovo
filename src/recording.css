@@ -1,5 +1,6 @@
 :root {
-  font-family: "Aptos", "Segoe UI Variable Text", "SF Pro Text", system-ui, sans-serif;
+  font-family:
+    "Aptos", "Segoe UI Variable Text", "SF Pro Text", system-ui, sans-serif;
   font-synthesis: none;
 }
 
@@ -29,7 +30,11 @@ body {
   display: grid;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 22px;
-  background: linear-gradient(145deg, rgba(34, 36, 43, 0.92), rgba(18, 20, 25, 0.94));
+  background: linear-gradient(
+    145deg,
+    rgba(34, 36, 43, 0.92),
+    rgba(18, 20, 25, 0.94)
+  );
   color: #f4f5f7;
   /* No outer box-shadow — the window clips it and on
      XWayland/WebKitGTK the clipped shadow composites against an opaque
@@ -129,7 +134,11 @@ body {
 
 .recording-indicator.is-error {
   border-color: rgba(255, 104, 116, 0.34);
-  background: linear-gradient(145deg, rgba(67, 30, 36, 0.98), rgba(31, 19, 23, 0.98));
+  background: linear-gradient(
+    145deg,
+    rgba(67, 30, 36, 0.98),
+    rgba(31, 19, 23, 0.98)
+  );
 }
 
 .recording-indicator.is-loading {
@@ -151,7 +160,11 @@ body {
 @media (prefers-color-scheme: light) {
   .recording-indicator {
     border-color: rgba(25, 30, 42, 0.12);
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 245, 248, 0.98));
+    background: linear-gradient(
+      145deg,
+      rgba(255, 255, 255, 0.98),
+      rgba(244, 245, 248, 0.98)
+    );
     color: #20232b;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
   }
@@ -162,7 +175,11 @@ body {
 
   .recording-indicator.is-error {
     border-color: rgba(190, 42, 58, 0.25);
-    background: linear-gradient(145deg, rgba(255, 244, 245, 0.99), rgba(255, 229, 232, 0.99));
+    background: linear-gradient(
+      145deg,
+      rgba(255, 244, 245, 0.99),
+      rgba(255, 229, 232, 0.99)
+    );
   }
 
   .error-state {
@@ -173,8 +190,6 @@ body {
     background: #cf3344;
     color: #ffffff;
   }
-
-
 }
 
 @media (prefers-reduced-motion: reduce) {

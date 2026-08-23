@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Commands, Events } from "@/lib/ipc";
 import {
+  getErrorMessage,
   type ShortcutBackendStatusPayload,
   type ShortcutViewState,
-  getErrorMessage,
 } from "@/lib/types";
 
 interface ShortcutStatus {
@@ -158,9 +158,7 @@ export function useShortcutStatus({
         unlisten = fn;
       })
       .catch(() => {
-        onError(
-          "Не удалось подключить отображение состояния сочетания.",
-        );
+        onError("Не удалось подключить отображение состояния сочетания.");
       });
 
     return () => {

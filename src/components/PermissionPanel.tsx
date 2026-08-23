@@ -1,6 +1,6 @@
-import { Button } from "@/components/ui/button";
 import { X } from "lucide-react";
-import { type ShortcutPermissionSetup } from "@/lib/types";
+import { Button } from "@/components/ui/button";
+import type { ShortcutPermissionSetup } from "@/lib/types";
 
 interface PermissionPanelProps {
   visible: boolean;
@@ -49,12 +49,15 @@ export function PermissionPanel({
 
   return (
     <section
-      ref={panelRef as React.RefObject<HTMLElement>}
+      ref={panelRef}
       aria-labelledby="permission-panel-title"
       className="rounded-lg border-l-[3px] border-l-destructive bg-muted/50 p-5 space-y-4"
     >
       <div className="flex items-center justify-between">
-        <h2 id="permission-panel-title" className="text-base font-bold tracking-tight">
+        <h2
+          id="permission-panel-title"
+          className="text-base font-bold tracking-tight"
+        >
           Доступ к клавиатуре
         </h2>
         <Button
@@ -78,8 +81,11 @@ export function PermissionPanel({
         <li className="flex gap-2">
           <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-destructive flex-shrink-0" />
           <span>
-            Доступ получает <strong className="text-foreground font-semibold">весь сеанс пользователя</strong>,
-            а не только Слово. Любая программа, запущенная от вашего имени,
+            Доступ получает{" "}
+            <strong className="text-foreground font-semibold">
+              весь сеанс пользователя
+            </strong>
+            , а не только Слово. Любая программа, запущенная от вашего имени,
             сможет читать все нажатия клавиш.
           </span>
         </li>
@@ -112,7 +118,11 @@ export function PermissionPanel({
       )}
 
       {loading && (
-        <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <div
+          role="status"
+          aria-live="polite"
+          className="flex items-center gap-2 text-xs text-muted-foreground"
+        >
           <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           <span>Загружаем инструкции…</span>
         </div>
@@ -121,7 +131,11 @@ export function PermissionPanel({
       {setup && !loading && (
         <div className="space-y-4">
           {setupError && (
-            <p role="alert" aria-live="assertive" className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive">
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="rounded-md bg-destructive/10 px-3 py-2 text-sm font-semibold text-destructive"
+            >
               {setupError}
             </p>
           )}

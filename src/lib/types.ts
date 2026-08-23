@@ -116,7 +116,11 @@ export function getErrorMessage(error: unknown, fallback: string): string {
 }
 
 export function formatElapsed(seconds = 0): string {
-  const minutes = Math.floor(seconds / 60).toString().padStart(2, "0");
-  const remainder = Math.floor(seconds % 60).toString().padStart(2, "0");
+  const minutes = Math.floor(seconds / 60)
+    .toString()
+    .padStart(2, "0");
+  const remainder = Math.floor(seconds % 60)
+    .toString()
+    .padStart(2, "0");
   return `${minutes}:${remainder}`;
 }

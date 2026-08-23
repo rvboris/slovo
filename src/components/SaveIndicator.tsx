@@ -24,7 +24,10 @@ export function SaveIndicator({ text, kind }: SaveIndicatorProps) {
   if (kind === "idle") return null;
 
   return (
-    <footer className="mt-auto flex shrink-0 items-center justify-center" data-save-kind={kind}>
+    <footer
+      className="mt-auto flex shrink-0 items-center justify-center"
+      data-save-kind={kind}
+    >
       <span
         role="status"
         aria-live="polite"
@@ -35,7 +38,10 @@ export function SaveIndicator({ text, kind }: SaveIndicatorProps) {
         )}
       >
         <span
-          className={cn("h-1.5 w-1.5 shrink-0 rounded-full transition-colors", dotColor[kind])}
+          className={cn(
+            "h-1.5 w-1.5 shrink-0 rounded-full transition-colors",
+            dotColor[kind],
+          )}
           aria-hidden="true"
         />
         <span>

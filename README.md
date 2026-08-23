@@ -1,14 +1,14 @@
 # Слово
 
-Linux-first push-to-talk транскрипция. Записывает голос по горячей клавише, отправляет на локальный Whisper-совместимый сервер и вставляет распознанный текст в активное окно.
+Push-to-talk транскрипция для Linux и Windows. Записывает голос по горячей клавише, отправляет на локальный Whisper-совместимый сервер и вставляет распознанный текст в активное окно.
 
-Поддерживает Wayland (через evdev) и X11.
+На Linux поддерживает Wayland (через evdev) и X11; на Windows — нативные глобальные хоткеи и вставку через Win32.
 
 ## Возможности
 
 - **Push-to-talk** — тригер на toggle, hold или auto-VAD
 - **Глобальный хоткей** — работает в любой раскладке, включая Cyrillic (напр. `Ctrl+Shift+Space`)
-- **Автовставка** — текст копируется в буфер и вставляется через `ydotool` (Wayland) или `enigo` (X11)
+- **Автовставка** — текст копируется в буфер и вставляется через `ydotool` (Wayland), `enigo` (X11, Windows)
 - **Wayland evdev хоткеи** — через sidecar `slovo-input-helper` с udev-правилом
 - **Тёмная/светлая тема** — ручной переключатель с сохранением в localStorage
 - **Настройка сервера** — любой OpenAI `/v1/audio/transcriptions` совместимый эндпоинт
@@ -17,7 +17,8 @@ Linux-first push-to-talk транскрипция. Записывает голо
 
 ### Готовые пакеты
 
-Скачай `.deb` или `.AppImage` со [страницы релизов](https://github.com/rvboris/slovo/releases).
+- **Windows**: `.msi` / `.exe` (NSIS) со [страницы релизов](https://github.com/rvboris/slovo/releases) — без внешних зависимостей.
+- **Linux**: `.deb` или `.AppImage` оттуда же.
 
 ### Требования
 
@@ -29,7 +30,7 @@ sudo cp src-tauri/resources/72-slovo-input-helper.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules
 ```
 
-Для вставки текста на Wayland нужен `ydotool`, на X11 — ничего дополнительно.
+Для вставки текста на Wayland нужен `ydotool`, на X11 и Windows — ничего дополнительно.
 
 ### Транскрипционный сервер
 
@@ -47,26 +48,51 @@ URL сервера настраивается в окне приложения. 
 ```bash
 # Node.js 22+
 npm install
+```
 
-# Rust (stable)
-# Системные библиотеки для Tauri 2 на Linux:
+Rust (stable) нужен на обеих платформах. Системные библиотеки для Tauri 2 нужны только на Linux:
+
+```bash
 sudo apt install libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
   patchelf libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev \
   libasound2-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
   libx11-dev libxdo-dev libxkbcommon-dev libudev-dev
 ```
 
+На Windows достаточно [Rust + MSVC Build Tools](https://tauri.app/start/prerequisites/) — `npm run tauri dev` работает из коробки.
+
 ### Запуск
 
 ```bash
-npm run dev:linux     # dev-режим с Linux-конфигом (собирает sidecar)
+npm run tauri dev    # dev-режим (Windows и Linux X11)
+npm run dev:linux    # dev-режим с Linux-конфигом (собирает sidecar, для Wayland)
 ```
 
 ### Сборка
 
 ```bash
-npm run build:linux   # production-сборка: .deb + .AppImage
+npm run tauri build  # production-сборка под текущую ОС (Windows: .msi + .exe)
+npm run build:linux  # Linux: .deb + .AppImage со sidecar
 ```
+
+### Проверки и тесты
+
+```bash
+npm run lint         # Biome: линт + форматирование (проверка)
+npm run format       # то же с авто-исправлением
+npx tsc --noEmit     # проверка типов фронтенда
+npm run build        # tsc + vite build
+npm run test:rust    # юнит-тесты Rust (~85 тестов: lock-протоколы, аудио, шорткаты)
+```
+
+CI (`.github/workflows/ci.yml`) запускает всё это на каждый PR: джоба фронтенда и матрица Rust (Ubuntu + Windows) с `cargo fmt --check`, `cargo clippy -D warnings` и `cargo test`.
+
+### Отладочные скрипты
+
+- `scripts/build-helper.js` — сборка sidecar для текущего таргета (вызывается автоматически)
+- `scripts/mock-transcription-server.py` — мок Whisper-сервера на `127.0.0.1:8072` для локальной разработки
+- `scripts/send-hotkey.ps1`, `scripts/test-hotkey.ps1`, `scripts/capture-overlay.ps1` — Windows-инструменты для смоук-тестов хоткея и оверлея
+- `scripts/make-icon.py`, `scripts/make-ico.py` — регенерация иконок (нужен Pillow)
 
 ### Архитектура
 
@@ -99,13 +125,13 @@ npm run build:linux   # production-сборка: .deb + .AppImage
 
 3. **Смержи PR** — release-please создаст git-тег `slovo-vX.Y.Z` и GitHub Release.
 
-4. **CI соберёт артефакты** — GitHub Actions (`.github/workflows/release.yml`) соберёт `.deb` и `.AppImage` через `tauri-action` и прикрепит к Release.
+4. **CI соберёт артефакты** — GitHub Actions (`.github/workflows/release.yml`) соберёт установщики для Linux (`.deb`, `.AppImage`) и Windows (`.msi`, `.exe`) через `tauri-action` и прикрепит к Release.
 
 ### Конфигурация
 
 - `release-please-config.json` — настройки release-please (rust release-type, extra-files)
 - `.release-please-manifest.json` — текущая версия
-- `.github/workflows/release.yml` — workflow: release-please + сборка Linux x86_64
+- `.github/workflows/release.yml` — workflow: release-please + сборка Linux x86_64 и Windows x86_64
 
 ## Лицензия
 

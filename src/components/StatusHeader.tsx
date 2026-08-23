@@ -1,7 +1,7 @@
-import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
-import type { StatusKind } from "@/lib/types";
+import { Button } from "@/components/ui/button";
 import type { Theme } from "@/hooks/useTheme";
+import type { StatusKind } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** "Слово" logo — a Cyrillic "С" formed by five voice-waveform bars.
@@ -19,11 +19,51 @@ function SlovoMark() {
           heights taper at the ends, tallest in the middle, so their
           tops trace the letter's arc. Animate via scaleY from a shared
           transform-origin at the bottom of each bar. */}
-      <rect className="slovo-bar slovo-bar-1" x="3"  y="7"  width="2.6" height="10" rx="1.3" fill="var(--accent-vivid)" />
-      <rect className="slovo-bar slovo-bar-2" x="7"  y="4"  width="2.6" height="16" rx="1.3" fill="var(--accent-vivid)" />
-      <rect className="slovo-bar slovo-bar-3" x="11" y="2.5" width="2.6" height="19" rx="1.3" fill="var(--accent-vivid)" />
-      <rect className="slovo-bar slovo-bar-4" x="15" y="4"  width="2.6" height="16" rx="1.3" fill="var(--accent-vivid)" />
-      <rect className="slovo-bar slovo-bar-5" x="19" y="7"  width="2.6" height="10" rx="1.3" fill="var(--accent-vivid)" />
+      <rect
+        className="slovo-bar slovo-bar-1"
+        x="3"
+        y="7"
+        width="2.6"
+        height="10"
+        rx="1.3"
+        fill="var(--accent-vivid)"
+      />
+      <rect
+        className="slovo-bar slovo-bar-2"
+        x="7"
+        y="4"
+        width="2.6"
+        height="16"
+        rx="1.3"
+        fill="var(--accent-vivid)"
+      />
+      <rect
+        className="slovo-bar slovo-bar-3"
+        x="11"
+        y="2.5"
+        width="2.6"
+        height="19"
+        rx="1.3"
+        fill="var(--accent-vivid)"
+      />
+      <rect
+        className="slovo-bar slovo-bar-4"
+        x="15"
+        y="4"
+        width="2.6"
+        height="16"
+        rx="1.3"
+        fill="var(--accent-vivid)"
+      />
+      <rect
+        className="slovo-bar slovo-bar-5"
+        x="19"
+        y="7"
+        width="2.6"
+        height="10"
+        rx="1.3"
+        fill="var(--accent-vivid)"
+      />
     </svg>
   );
 }
@@ -38,15 +78,38 @@ interface StatusHeaderProps {
 /** High-visibility status pill — colored dot + bold text, distinct per state.
  *  Replaces the low-contrast shadcn Badge variants with a loud, legible chip. */
 const statusStyle: Record<StatusKind, { dot: string; chip: string }> = {
-  ready:        { dot: "bg-zinc-400",                                    chip: "bg-zinc-500/10  text-zinc-700 dark:text-zinc-200 border-zinc-500/25" },
-  recording:    { dot: "bg-red-500 animate-pulse",                       chip: "bg-red-500/15    text-red-700  dark:text-red-200  border-red-500/40" },
-  transcribing: { dot: "bg-indigo-500 animate-pulse",                    chip: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-200 border-indigo-500/40" },
-  inserted:     { dot: "bg-emerald-500",                                 chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200 border-emerald-500/40" },
-  copied:       { dot: "bg-emerald-500",                                 chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200 border-emerald-500/40" },
-  error:        { dot: "bg-red-500",                                     chip: "bg-red-500/15    text-red-700  dark:text-red-200  border-red-500/40" },
+  ready: {
+    dot: "bg-zinc-400",
+    chip: "bg-zinc-500/10  text-zinc-700 dark:text-zinc-200 border-zinc-500/25",
+  },
+  recording: {
+    dot: "bg-red-500 animate-pulse",
+    chip: "bg-red-500/15    text-red-700  dark:text-red-200  border-red-500/40",
+  },
+  transcribing: {
+    dot: "bg-indigo-500 animate-pulse",
+    chip: "bg-indigo-500/15 text-indigo-700 dark:text-indigo-200 border-indigo-500/40",
+  },
+  inserted: {
+    dot: "bg-emerald-500",
+    chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200 border-emerald-500/40",
+  },
+  copied: {
+    dot: "bg-emerald-500",
+    chip: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-200 border-emerald-500/40",
+  },
+  error: {
+    dot: "bg-red-500",
+    chip: "bg-red-500/15    text-red-700  dark:text-red-200  border-red-500/40",
+  },
 };
 
-export function StatusHeader({ kind, text, theme, onToggleTheme }: StatusHeaderProps) {
+export function StatusHeader({
+  kind,
+  text,
+  theme,
+  onToggleTheme,
+}: StatusHeaderProps) {
   const s = statusStyle[kind];
   return (
     <header className="flex items-center justify-between gap-4">
@@ -66,7 +129,9 @@ export function StatusHeader({ kind, text, theme, onToggleTheme }: StatusHeaderP
         <div className="slovo-chip flex h-9 w-9 items-center justify-center">
           <SlovoMark />
         </div>
-        <h1 className="relative z-10 text-base font-bold tracking-tight">Слово</h1>
+        <h1 className="relative z-10 text-base font-bold tracking-tight">
+          Слово
+        </h1>
       </div>
       <div className="flex min-w-0 max-w-[60%] items-center gap-2">
         <div
@@ -78,7 +143,10 @@ export function StatusHeader({ kind, text, theme, onToggleTheme }: StatusHeaderP
             s.chip,
           )}
         >
-          <span className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", s.dot)} aria-hidden="true" />
+          <span
+            className={cn("h-1.5 w-1.5 rounded-full flex-shrink-0", s.dot)}
+            aria-hidden="true"
+          />
           <span className="min-w-0 truncate">{text}</span>
         </div>
         <Button

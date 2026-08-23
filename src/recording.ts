@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Commands, Events } from "@/lib/ipc";
-import { type StatusPayload, formatElapsed } from "@/lib/types";
+import { formatElapsed, type StatusPayload } from "@/lib/types";
 
-const indicatorElement =
-  document.querySelector<HTMLElement>(".recording-indicator");
+const indicatorElement = document.querySelector<HTMLElement>(
+  ".recording-indicator",
+);
 const recordingStateElement =
   document.querySelector<HTMLElement>("#recording-state");
 const errorStateElement = document.querySelector<HTMLElement>("#error-state");
@@ -36,9 +37,7 @@ const LEVEL_ALPHA = 0.18;
 const REDUCED_MOTION = window.matchMedia(
   "(prefers-reduced-motion: reduce)",
 ).matches;
-const LIGHT_THEME = window.matchMedia(
-  "(prefers-color-scheme: light)",
-).matches;
+const LIGHT_THEME = window.matchMedia("(prefers-color-scheme: light)").matches;
 
 // Ring buffer of smoothed amplitudes — one sample per rAF tick. The buffer
 // width matches the canvas columns, so each entry is one vertical slice of
@@ -145,7 +144,7 @@ function startVisualizer(): void {
       // Age fade: newest columns brightest, oldest trail off — gives the
       // scrolling motion a sense of direction without per-pixel alpha math.
       const age = i / SAMPLES;
-      const amp = Math.pow(v, 0.75) * age;
+      const amp = v ** 0.75 * age;
       const h = amp * (H * 0.46);
       if (h < 0.15) continue;
       const x = i * colW;

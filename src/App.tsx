@@ -1,20 +1,20 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useTheme } from "@/hooks/useTheme";
-import { useSettings } from "@/hooks/useSettings";
-import { useHotkey } from "@/hooks/useHotkey";
-import { useStatus } from "@/hooks/useStatus";
-import { useShortcutStatus } from "@/hooks/useShortcutStatus";
-import { usePermissionSetup } from "@/hooks/usePermissionSetup";
-import { useInputDevices } from "@/hooks/useInputDevices";
-import { useServerAvailability } from "@/hooks/useServerAvailability";
-import { StatusHeader } from "@/components/StatusHeader";
-import { HotkeySetting } from "@/components/HotkeySetting";
-import { ServerUrlSetting } from "@/components/ServerUrlSetting";
-import { InputDeviceSetting } from "@/components/InputDeviceSetting";
-import { TriggerSetting } from "@/components/TriggerSetting";
-import { PermissionPanel } from "@/components/PermissionPanel";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { HotkeySetting } from "@/components/HotkeySetting";
+import { InputDeviceSetting } from "@/components/InputDeviceSetting";
+import { PermissionPanel } from "@/components/PermissionPanel";
 import { SaveIndicator } from "@/components/SaveIndicator";
+import { ServerUrlSetting } from "@/components/ServerUrlSetting";
+import { StatusHeader } from "@/components/StatusHeader";
+import { TriggerSetting } from "@/components/TriggerSetting";
+import { useHotkey } from "@/hooks/useHotkey";
+import { useInputDevices } from "@/hooks/useInputDevices";
+import { usePermissionSetup } from "@/hooks/usePermissionSetup";
+import { useServerAvailability } from "@/hooks/useServerAvailability";
+import { useSettings } from "@/hooks/useSettings";
+import { useShortcutStatus } from "@/hooks/useShortcutStatus";
+import { useStatus } from "@/hooks/useStatus";
+import { useTheme } from "@/hooks/useTheme";
 import type { TriggerType } from "@/lib/types";
 
 export default function App() {
@@ -142,7 +142,12 @@ export default function App() {
   return (
     <main className="flex h-dvh w-full flex-col gap-5 py-6 overflow-hidden">
       <div className="px-6">
-        <StatusHeader kind={status.kind} text={status.text} theme={theme} onToggleTheme={toggleTheme} />
+        <StatusHeader
+          kind={status.kind}
+          text={status.text}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+        />
       </div>
 
       <div className="flex flex-col gap-6 flex-1 min-h-0 px-6">

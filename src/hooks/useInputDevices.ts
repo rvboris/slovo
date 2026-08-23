@@ -1,10 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Commands } from "@/lib/ipc";
 import {
-  type InputDevice,
   DEFAULT_DEVICE_VALUE,
   getErrorMessage,
+  type InputDevice,
 } from "@/lib/types";
 
 interface DeviceOption {

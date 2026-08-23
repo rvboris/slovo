@@ -29,6 +29,9 @@ dist-ssr
 # Local OpenCode tooling and downloaded skills
 .opencode/
 
+# Local agent tooling
+.zcode/
+
 # BEGIN oh-my-opencode-slim worktrees
 .slim/worktrees/
 .slim/worktrees.json
