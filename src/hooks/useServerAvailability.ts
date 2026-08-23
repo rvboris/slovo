@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Commands } from "@/lib/ipc";
+import { normalizeHttpUrl } from "@/lib/url";
 
 export type ServerAvailability =
   | "idle"
@@ -8,19 +10,6 @@ export type ServerAvailability =
   | "unavailable";
 
 const CHECK_INTERVAL_MS = 30_000;
-
-function normalizeValidUrl(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "http:" && url.protocol !== "https:") return null;
-    return trimmed;
-  } catch {
-    return null;
-  }
-}
 
 export function useServerAvailability(url: string, enabled: boolean) {
   const [result, setResult] = useState<{
@@ -48,7 +37,7 @@ export function useServerAvailability(url: string, enabled: boolean) {
   }, []);
 
   const check = useCallback(async (value: string): Promise<void> => {
-    const normalizedUrl = normalizeValidUrl(value);
+    const normalizedUrl = normalizeHttpUrl(value);
     const revision = ++requestRevisionRef.current;
 
     if (!normalizedUrl) {
@@ -62,11 +51,11 @@ export function useServerAvailability(url: string, enabled: boolean) {
     try {
       // The command resolves (available) or rejects (unavailable); it carries
       // no payload, so the outcome comes from the promise state alone.
-      await invoke<void>("check_server_url", { serverUrl: normalizedUrl });
+      await invoke<void>(Commands.checkServerUrl, { serverUrl: normalizedUrl });
       if (
         mountedRef.current &&
         revision === requestRevisionRef.current &&
-        normalizeValidUrl(currentUrlRef.current) === normalizedUrl
+        normalizeHttpUrl(currentUrlRef.current) === normalizedUrl
       ) {
         setResult({ status: "available", url: normalizedUrl });
       }
@@ -74,7 +63,7 @@ export function useServerAvailability(url: string, enabled: boolean) {
       if (
         mountedRef.current &&
         revision === requestRevisionRef.current &&
-        normalizeValidUrl(currentUrlRef.current) === normalizedUrl
+        normalizeHttpUrl(currentUrlRef.current) === normalizedUrl
       ) {
         setResult({ status: "unavailable", url: normalizedUrl });
       }
@@ -108,7 +97,7 @@ export function useServerAvailability(url: string, enabled: boolean) {
     };
   }, [enabled, check, invalidate]);
 
-  const currentNormalizedUrl = normalizeValidUrl(url);
+  const currentNormalizedUrl = normalizeHttpUrl(url);
   const status =
     currentNormalizedUrl && result.url === currentNormalizedUrl
       ? result.status

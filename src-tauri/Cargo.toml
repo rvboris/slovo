@@ -15,15 +15,15 @@ redundant_pub_crate = "allow"
 unreachable_pub = "allow"
 
 [package]
-name = "homeborismygitslovo"
+name = "slovo"
 version = "0.5.0"
 description = "Linux-first push-to-talk transcription"
 authors = ["Slovo contributors"]
 edition = "2021"
-default-run = "homeborismygitslovo"
+default-run = "slovo"
 
 [lib]
-name = "homeborismygitslovo_lib"
+name = "slovo_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [lints]

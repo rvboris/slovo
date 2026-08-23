@@ -1,6 +1,11 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { type InputDevice, getErrorMessage } from "@/lib/types";
+import { Commands } from "@/lib/ipc";
+import {
+  type InputDevice,
+  DEFAULT_DEVICE_VALUE,
+  getErrorMessage,
+} from "@/lib/types";
 
 interface DeviceOption {
   value: string;
@@ -8,7 +13,7 @@ interface DeviceOption {
 }
 
 const defaultOption: DeviceOption = {
-  value: "__default__",
+  value: DEFAULT_DEVICE_VALUE,
   label: "Системное по умолчанию",
 };
 
@@ -19,7 +24,7 @@ function getInputDevices(force: boolean): Promise<InputDevice[]> {
   if (sharedRequest) return sharedRequest;
   if (!force && cachedDevices) return Promise.resolve(cachedDevices);
 
-  const request = invoke<InputDevice[]>("list_input_devices");
+  const request = invoke<InputDevice[]>(Commands.listInputDevices);
   const trackedRequest = request
     .then((devices) => {
       cachedDevices = devices;

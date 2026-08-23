@@ -1,6 +1,7 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { ServerAvailability } from "@/hooks/useServerAvailability";
+import { normalizeHttpUrl } from "@/lib/url";
 import { cn } from "@/lib/utils";
 import { useState, useEffect } from "react";
 
@@ -14,13 +15,8 @@ interface ServerUrlSettingProps {
 }
 
 function validateServerUrl(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return "Укажите адрес сервера.";
-  try {
-    const url = new URL(trimmed);
-    if (url.protocol !== "http:" && url.protocol !== "https:")
-      throw new Error();
-  } catch {
+  if (!value.trim()) return "Укажите адрес сервера.";
+  if (normalizeHttpUrl(value) === null) {
     return "Введите полный адрес, включая http:// или https://.";
   }
   return null;

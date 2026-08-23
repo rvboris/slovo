@@ -66,6 +66,9 @@ export interface ShortcutPermissionSetup {
 
 export type SaveKind = "idle" | "saving" | "saved" | "error";
 
+/** Select value representing "system default microphone" (device === null). */
+export const DEFAULT_DEVICE_VALUE = "__default__";
+
 export const DEFAULT_SETTINGS: Settings = {
   hotkey: "Control+Shift+Space",
   serverUrl: "http://127.0.0.1:8072",

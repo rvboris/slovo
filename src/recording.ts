@@ -1,11 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-
-type RuntimeStatus = {
-  kind: string;
-  message?: string;
-  elapsedSeconds?: number;
-};
+import { Commands, Events } from "@/lib/ipc";
+import { type StatusPayload, formatElapsed } from "@/lib/types";
 
 const indicatorElement =
   document.querySelector<HTMLElement>(".recording-indicator");
@@ -176,9 +172,7 @@ function stopVisualizer(): void {
 
 function render(seconds: number): void {
   const total = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(total / 60).toString().padStart(2, "0");
-  const remainder = (total % 60).toString().padStart(2, "0");
-  time.textContent = `${minutes}:${remainder}`;
+  time.textContent = formatElapsed(total);
   time.dateTime = `PT${total}S`;
 }
 
@@ -215,7 +209,7 @@ function showError(): void {
   resetVoiceLevel();
 }
 
-function applyStatus(payload: RuntimeStatus): void {
+function applyStatus(payload: StatusPayload): void {
   if (payload.kind === "recording") {
     showRecording(payload.elapsedSeconds ?? 0);
   } else if (payload.kind === "error") {
@@ -228,7 +222,7 @@ function applyStatus(payload: RuntimeStatus): void {
 
 // Listener setup can reject when the IPC bridge is unavailable; the overlay
 // is a passive display, so failures leave it in its initial hidden state.
-void listen<AudioLevelPayload>("slovo://audio-level", ({ payload }) => {
+void listen<AudioLevelPayload>(Events.audioLevel, ({ payload }) => {
   const level =
     payload && typeof payload === "object" && "level" in payload
       ? typeof payload.level === "number"
@@ -240,12 +234,12 @@ void listen<AudioLevelPayload>("slovo://audio-level", ({ payload }) => {
 
 let receivedLiveStatus = false;
 
-void listen<RuntimeStatus>("slovo://status", ({ payload }) => {
+void listen<StatusPayload>(Events.status, ({ payload }) => {
   receivedLiveStatus = true;
   applyStatus(payload);
 }).catch(() => undefined);
 
-void invoke<RuntimeStatus>("get_status")
+void invoke<StatusPayload>(Commands.getStatus)
   .then((payload) => {
     if (!receivedLiveStatus) applyStatus(payload);
   })

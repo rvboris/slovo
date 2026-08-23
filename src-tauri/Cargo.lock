@@ -1777,27 +1777,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
-name = "homeborismygitslovo"
-version = "0.5.0"
-dependencies = [
- "arboard",
- "cpal",
- "enigo",
- "hound",
- "num-traits",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "slovo-shortcut-core",
- "tauri",
- "tauri-build",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-single-instance",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "hound"
 version = "3.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3833,6 +3812,27 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
+
+[[package]]
+name = "slovo"
+version = "0.5.0"
+dependencies = [
+ "arboard",
+ "cpal",
+ "enigo",
+ "hound",
+ "num-traits",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "slovo-shortcut-core",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-global-shortcut",
+ "tauri-plugin-single-instance",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "slovo-input-helper"

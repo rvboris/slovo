@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Commands } from "@/lib/ipc";
 import { formatHotkey, isModifierKey } from "@/lib/hotkey";
 import { getErrorMessage } from "@/lib/types";
 
@@ -25,7 +26,7 @@ export function useHotkey({ hotkey, enabled, onSave, onError }: UseHotkeyOptions
   const mountedRef = useRef(true);
 
   const setBackendCapture = useCallback((active: boolean, token: number) => {
-    return invoke<void>("set_hotkey_capture_active", { active, token });
+    return invoke<void>(Commands.setHotkeyCaptureActive, { active, token });
   }, []);
 
   const endCapture = useCallback(() => {

@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Commands } from "@/lib/ipc";
 import {
   type ShortcutPermissionSetup,
   getErrorMessage,
@@ -50,7 +51,7 @@ export function usePermissionSetup() {
 
     try {
       const result = await invoke<ShortcutPermissionSetup>(
-        "get_shortcut_permission_setup",
+        Commands.getShortcutPermissionSetup,
       );
       if (result.supported === false) {
         setStateMessage(

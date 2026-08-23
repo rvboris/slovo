@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Commands } from "@/lib/ipc";
+import { normalizeHttpUrl } from "@/lib/url";
 import {
   type Settings,
   type SaveKind,
@@ -54,7 +56,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
       const operation = queueRef.current.then(async () => {
         try {
           const saved = normalizeSettings(
-            await invoke<Settings>("update_settings", {
+            await invoke<Settings>(Commands.updateSettings, {
               settings: requested,
             }),
           );
@@ -96,7 +98,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
   const loadSettings = useCallback(async (): Promise<void> => {
     try {
       const loaded = normalizeSettings(
-        await invoke<Settings>("get_settings"),
+        await invoke<Settings>(Commands.getSettings),
       );
       setSettings(loaded);
       persistedRef.current = { ...loaded };
@@ -115,15 +117,9 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
 
       serverTimerRef.current = window.setTimeout(() => {
         serverTimerRef.current = undefined;
-        const trimmed = value.trim();
-        if (!trimmed) return;
-        try {
-          const url = new URL(trimmed);
-          if (url.protocol !== "http:" && url.protocol !== "https:") return;
-        } catch {
-          return;
-        }
-        void saveSettings({ ...settings, serverUrl: trimmed }).catch(
+        const normalized = normalizeHttpUrl(value);
+        if (!normalized) return;
+        void saveSettings({ ...settings, serverUrl: normalized }).catch(
           () => undefined,
         );
       }, 400);
@@ -135,15 +131,9 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
     (value: string) => {
       if (serverTimerRef.current) window.clearTimeout(serverTimerRef.current);
       serverTimerRef.current = undefined;
-      const trimmed = value.trim();
-      if (!trimmed || trimmed === settings.serverUrl) return;
-      try {
-        const url = new URL(trimmed);
-        if (url.protocol !== "http:" && url.protocol !== "https:") return;
-      } catch {
-        return;
-      }
-      void saveSettings({ ...settings, serverUrl: trimmed }).catch(
+      const normalized = normalizeHttpUrl(value);
+      if (!normalized || normalized === settings.serverUrl) return;
+      void saveSettings({ ...settings, serverUrl: normalized }).catch(
         () => undefined,
       );
     },
@@ -167,6 +157,5 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
     scheduleServerSave,
     saveServerNow,
     updateSetting,
-    setSettings,
   };
 }

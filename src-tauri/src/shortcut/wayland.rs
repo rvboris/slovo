@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::AppHandle;
 
 use super::{BackendKind, ShortcutBackendStatus, ShortcutChord, ShortcutError};
 use crate::{handle_hotkey_action, HotkeyEvent};
@@ -543,10 +543,6 @@ impl Drop for WaylandSupervisor {
     }
 }
 
-fn evdev_debug_enabled() -> bool {
-    env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1")
-}
-
 fn log_wayland(message: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "[slovo] wayland supervisor: {message}");
@@ -574,19 +570,16 @@ fn set_shared_status(
     current: &Arc<Mutex<ShortcutBackendStatus>>,
     status: ShortcutBackendStatus,
 ) {
-    if evdev_debug_enabled() {
+    if crate::evdev_debug_enabled() {
         log_wayland(&format!("set_shared_status publishing {status:?}"));
     }
+    // The supervisor-local cache first (it survives even without AppState),
+    // then the shared publication path — status write + revision bump +
+    // event emit, including the shutdown guard.
     if let Ok(mut value) = current.lock() {
         *value = status.clone();
     }
-    if let Some(state) = app.try_state::<crate::AppState>() {
-        if let Ok(mut shortcut) = state.shortcut.lock() {
-            shortcut.status = status.clone();
-            shortcut.status_revision = shortcut.status_revision.wrapping_add(1);
-        }
-    }
-    let _ = app.emit("slovo://shortcut-status", status);
+    crate::state::set_shortcut_status(app, status);
 }
 
 fn zero_device_status() -> ShortcutBackendStatus {

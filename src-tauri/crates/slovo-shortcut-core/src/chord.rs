@@ -55,8 +55,20 @@ pub enum ShortcutKey {
 }
 
 impl ShortcutKey {
+    /// Layout-dependent key aliases: `Ё`/`ё` and `` ` `` sit on the physical
+    /// Backquote key of the standard Russian layout. Canonical names are
+    /// shared with the app-level hotkey string canonicalization so the two
+    /// layers can never drift apart.
+    pub fn canonical_alias(value: &str) -> Option<&'static str> {
+        match value {
+            "Ё" | "ё" | "`" => Some("Backquote"),
+            _ => None,
+        }
+    }
+
     fn parse(value: &str) -> Result<Self, ShortcutError> {
-        if value == "Ё" || value == "ё" || value == "`" {
+        // The only current alias resolves to Backquote (see canonical_alias).
+        if Self::canonical_alias(value).is_some() {
             return Ok(Self::Backquote);
         }
         if let Some(letter) = value.strip_prefix("Key") {

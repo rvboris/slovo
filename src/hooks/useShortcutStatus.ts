@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { Commands, Events } from "@/lib/ipc";
 import {
   type ShortcutBackendStatusPayload,
   type ShortcutViewState,
@@ -105,7 +106,7 @@ export function useShortcutStatus({
     setStatus((prev) => ({ ...prev, isBusy: true }));
     try {
       const result = await invoke<ShortcutBackendStatusPayload>(
-        "retry_shortcut_backend",
+        Commands.retryShortcutBackend,
       );
       renderStatus(result);
       onClearError();
@@ -126,7 +127,7 @@ export function useShortcutStatus({
     const requestRevision = eventRevisionRef.current;
     try {
       const result = await invoke<ShortcutBackendStatusPayload>(
-        "get_shortcut_backend_status",
+        Commands.getShortcutBackendStatus,
       );
       if (eventRevisionRef.current === requestRevision) renderStatus(result);
     } catch (error) {
@@ -145,7 +146,7 @@ export function useShortcutStatus({
     let cancelled = false;
 
     listen<ShortcutBackendStatusPayload>(
-      "slovo://shortcut-status",
+      Events.shortcutStatus,
       ({ payload }) => {
         if (!cancelled) {
           eventRevisionRef.current += 1;

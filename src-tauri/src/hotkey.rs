@@ -7,6 +7,7 @@
 
 use crate::output;
 use crate::settings::TriggerType;
+use crate::shortcut::ShortcutKey;
 use crate::state::{emit_status, emit_status_event, AppState, StatusEvent, StatusKind};
 use crate::transcription;
 use crate::trigger::Action;
@@ -43,7 +44,7 @@ pub enum HotkeyEvent {
 /// Dispatcher that converts a normalized hotkey event into trigger/recording
 /// actions. Shared by the native shortcut handler and the Wayland helper.
 pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
-    if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
+    if crate::evdev_debug_enabled() {
         eprintln!("[slovo] hotkey action boundary event={event:?}");
     }
     let Some(app_state) = app.try_state::<AppState>() else {
@@ -73,7 +74,7 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
 }
 
 pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
-    if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
+    if crate::evdev_debug_enabled() {
         eprintln!(
             "[slovo] shortcut plugin event {shortcut:?} state={:?}",
             event.state()
@@ -85,7 +86,7 @@ pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: Short
         Err(_) => return,
     };
     if parse_hotkey(&registered).as_ref().ok() != Some(shortcut) {
-        if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
+        if crate::evdev_debug_enabled() {
             eprintln!(
                 "[slovo] shortcut event ignored: registered '{registered}' vs event {shortcut:?}"
             );
@@ -102,14 +103,11 @@ pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: Short
 pub(crate) fn canonicalize_hotkey(value: &str) -> Result<String, String> {
     let mut parts = value.trim().split('+').map(str::trim).collect::<Vec<_>>();
     let key = parts.last_mut().ok_or("invalid hotkey: empty value")?;
-    *key = match *key {
-        // Ё shares the physical Backquote key on the standard Russian layout.
-        "Ё" | "ё" | "`" => "Backquote",
-        key if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() => {
-            return Ok(value.trim().to_owned())
-        }
-        key => key,
-    };
+    if let Some(canonical) = ShortcutKey::canonical_alias(key) {
+        *key = canonical;
+    } else if key.len() == 1 && key.as_bytes()[0].is_ascii_alphabetic() {
+        return Ok(value.trim().to_owned());
+    }
     Ok(parts.join("+"))
 }
 

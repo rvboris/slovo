@@ -29,6 +29,13 @@ pub use app::run;
 pub use hotkey::{handle_hotkey_action, HotkeyEvent};
 pub use state::AppState;
 
+/// True when `SLOVO_EVDEV_DEBUG=1` is set: enables verbose tracing across the
+/// hotkey boundary, the Wayland supervisor, and the evdev helper. Checked at
+/// each call so tests (and launch arguments) can toggle it dynamically.
+pub(crate) fn evdev_debug_enabled() -> bool {
+    std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1")
+}
+
 #[cfg(test)]
 mod tests {
     use super::permissions::{

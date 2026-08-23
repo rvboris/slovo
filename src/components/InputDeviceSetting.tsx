@@ -6,6 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { DEFAULT_DEVICE_VALUE } from "@/lib/types";
 
 interface InputDeviceSettingProps {
   value: string | null;
@@ -22,13 +23,13 @@ export function InputDeviceSetting({
   onRefresh,
   onChange,
 }: InputDeviceSettingProps) {
-  const selectValue = value === null ? "__default__" : value;
+  const selectValue = value === null ? DEFAULT_DEVICE_VALUE : value;
   const visibleOptions = options.filter(
     (option) => option.value.trim() && option.label.trim(),
   );
 
   const handleChange = (v: string) => {
-    onChange(v === "__default__" ? null : v);
+    onChange(v === DEFAULT_DEVICE_VALUE ? null : v);
   };
 
   return (

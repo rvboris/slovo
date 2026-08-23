@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { Events } from "@/lib/ipc";
 import {
   type StatusKind,
   type StatusPayload,
@@ -60,7 +61,7 @@ export function useStatus(
     let unlisten: (() => void) | undefined;
     let cancelled = false;
 
-    listen<StatusPayload>("slovo://status", ({ payload }) => {
+    listen<StatusPayload>(Events.status, ({ payload }) => {
       if (!cancelled) setStatus(payload);
     })
       .then((fn) => {
