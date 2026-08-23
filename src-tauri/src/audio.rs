@@ -83,7 +83,7 @@ impl AudioController {
                                 auto_vad,
                                 device_name.as_deref(),
                                 on_auto_stop,
-                                Arc::clone(&worker_level),
+                                &worker_level,
                             )
                             .map(|(recording, opened_name)| {
                                 active = Some(recording);
@@ -101,13 +101,16 @@ impl AudioController {
                                 // Pull the buffered samples and sample rate out
                                 // before dropping the recording: Drop pauses
                                 // the stream so no further samples arrive,
-                                // then we resample what was captured.
+                                // then we resample what was captured. Taking
+                                // (not cloning) under the lock keeps the
+                                // window in which the realtime capture
+                                // callback could block on it minimal.
                                 let sample_rate = recording.sample_rate;
                                 let samples = recording
                                     .samples
                                     .lock()
-                                    .map_err(|_| "microphone buffer lock poisoned")?
-                                    .clone();
+                                    .map_err(|_| "microphone buffer lock poisoned")
+                                    .map(|mut buffer| std::mem::take(&mut *buffer))?;
                                 drop(recording);
                                 wav_bytes(
                                     &resample_linear(&samples, sample_rate, TARGET_RATE),
@@ -166,7 +169,7 @@ fn open_stream(
     auto_vad: bool,
     device_name: Option<&str>,
     on_auto_stop: StopCallback,
-    level: Arc<AtomicU32>,
+    level: &Arc<AtomicU32>,
 ) -> Result<(ActiveRecording, String), String> {
     let host = cpal::default_host();
     let device = match device_name.map(str::trim) {
@@ -200,16 +203,23 @@ fn open_stream(
             let vad = Arc::clone(&vad);
             let stop_once = Arc::clone(&stop_once);
             let level = Arc::clone(&level);
+            // Reused across callbacks so the realtime audio path performs no
+            // per-invocation allocation once the capacity has grown.
+            let mut mono_scratch: Vec<f32> = Vec::new();
             device.build_input_stream(
                 &config,
                 move |data: &[$type], _| {
-                    let mono = interleaved_to_mono(data, channels, $convert);
+                    interleaved_to_mono(&mut mono_scratch, data, channels, $convert);
                     if let Ok(mut target) = samples.lock() {
-                        target.extend_from_slice(&mono);
+                        target.extend_from_slice(&mono_scratch);
                     }
-                    level.store(rms(&mono).to_bits(), Ordering::Relaxed);
+                    level.store(rms(&mono_scratch).to_bits(), Ordering::Relaxed);
                     let should_stop = started.elapsed() >= MAX_DURATION
-                        || (auto_vad && vad.lock().map(|mut v| v.observe(&mono)).unwrap_or(false));
+                        || (auto_vad
+                            && vad
+                                .lock()
+                                .map(|mut v| v.observe(&mono_scratch))
+                                .unwrap_or(false));
                     if should_stop {
                         if let Ok(mut fired) = stop_once.lock() {
                             if !*fired {
@@ -392,27 +402,30 @@ fn normalize_level(rms: f32) -> f32 {
     (rms / LEVEL_FULL_SCALE_RMS).sqrt().clamp(0.0, 1.0)
 }
 
+/// Mixes interleaved multi-channel input down to mono, writing into the
+/// caller-owned `output` buffer (cleared first). Taking the buffer by
+/// reference lets the realtime capture callback reuse one allocation across
+/// invocations instead of allocating a fresh `Vec` per callback.
 pub fn interleaved_to_mono<T: Copy>(
+    output: &mut Vec<f32>,
     input: &[T],
     channels: usize,
     convert: impl Fn(T) -> f32,
-) -> Vec<f32> {
+) {
+    output.clear();
     if channels == 0 {
-        return Vec::new();
+        return;
     }
-    input
-        .chunks_exact(channels)
-        .map(|frame| {
-            let (sum, count) = frame
-                .iter()
-                .copied()
-                .map(&convert)
-                .fold((0.0_f32, 0.0_f32), |(sum, count), value| {
-                    (sum + value, count + 1.0)
-                });
-            sum / count
-        })
-        .collect()
+    output.extend(input.chunks_exact(channels).map(|frame| {
+        let (sum, count) = frame
+            .iter()
+            .copied()
+            .map(&convert)
+            .fold((0.0_f32, 0.0_f32), |(sum, count), value| {
+                (sum + value, count + 1.0)
+            });
+        sum / count
+    }));
 }
 
 pub fn resample_linear(input: &[f32], source_rate: u32, target_rate: u32) -> Vec<f32> {
@@ -477,6 +490,9 @@ pub fn wav_bytes(samples: &[f32], sample_rate: u32) -> Result<Vec<u8>, String> {
 }
 
 #[cfg(test)]
+// Boundary assertions compare floats that are exactly representable by
+// construction (0.0, saturation clamps); epsilon dance would hide regressions.
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -515,10 +531,12 @@ mod tests {
 
     #[test]
     fn mixes_stereo_to_mono() {
-        assert_eq!(
-            interleaved_to_mono(&[1.0, -1.0, 0.5, 0.5], 2, |v| v),
-            vec![0.0, 0.5]
-        );
+        let mut mono = Vec::new();
+        interleaved_to_mono(&mut mono, &[1.0, -1.0, 0.5, 0.5], 2, |v| v);
+        assert_eq!(mono, vec![0.0, 0.5]);
+        // Reuse of the same buffer must not leak samples from previous calls.
+        interleaved_to_mono(&mut mono, &[2.0, 2.0], 2, |v| v);
+        assert_eq!(mono, vec![2.0]);
     }
 
     #[test]

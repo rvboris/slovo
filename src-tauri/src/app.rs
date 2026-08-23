@@ -39,7 +39,10 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 /// # Panics
 ///
 /// Panics if Tauri cannot build the application from its generated context.
+// The builder chain is inherently linear wiring (plugins, setup, handler,
+// run-loop); splitting it would obscure the startup order it documents.
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+#[allow(clippy::too_many_lines)]
 pub fn run() {
     // GNOME Wayland deliberately does not let ordinary toplevel windows choose
     // their position. Use XWayland so the overlay stays at bottom center.
@@ -99,7 +102,7 @@ pub fn run() {
             };
 
             app.manage(AppState::new(
-                settings.clone(),
+                settings,
                 registered_hotkey.clone(),
                 manager,
                 shortcut_status.clone(),
@@ -109,7 +112,7 @@ pub fn run() {
 
             if async_wayland {
                 let app_for_shortcut = app.handle().clone();
-                let hotkey = registered_hotkey.clone();
+                let hotkey = registered_hotkey;
                 let spawn_result = std::thread::Builder::new()
                     .name("slovo-wayland-shortcut-init".into())
                     .spawn(move || {
@@ -131,14 +134,13 @@ pub fn run() {
                             },
                         );
                         if !state.shortcut_stopping.load(Ordering::Acquire) {
-                            let status = state
-                                .shortcut
-                                .lock()
-                                .map(|runtime| runtime.status.clone())
-                                .unwrap_or(ShortcutBackendStatus::Failed {
+                            let status = state.shortcut.lock().map_or_else(
+                                |_| ShortcutBackendStatus::Failed {
                                     backend: BackendKind::WaylandHelper,
                                     detail: "shortcut lock poisoned".to_owned(),
-                                });
+                                },
+                                |runtime| runtime.status.clone(),
+                            );
                             set_shortcut_status(&app_for_shortcut, status);
                             if let Err(error) = result {
                                 eprintln!(

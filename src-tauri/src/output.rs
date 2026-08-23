@@ -17,6 +17,9 @@ fn clipboard_handle() -> &'static Mutex<Option<Clipboard>> {
 /// stays alive as clipboard owner). On X11, keeps a long-lived `arboard`
 /// handle. `wl-copy` is essential on GNOME/Mutter which doesn't support
 /// `wl_data_control_manager_v1` that arboard relies on.
+// The X11 guard must stay alive across the write: dropping it releases
+// clipboard ownership on X11.
+#[allow(clippy::significant_drop_tightening)]
 fn set_clipboard(text: &str) -> Result<(), String> {
     // Wayland: write to BOTH clipboard and primary selection.
     // Shift+Insert pastes from primary on some apps, clipboard on others.

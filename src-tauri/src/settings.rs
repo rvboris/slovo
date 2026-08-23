@@ -159,7 +159,7 @@ mod tests {
             std::thread::current()
                 .name()
                 .unwrap_or("unnamed")
-                .replace(":", "-")
+                .replace(':', "-")
         ));
         let path = directory.join("settings.json");
         let settings = Settings {

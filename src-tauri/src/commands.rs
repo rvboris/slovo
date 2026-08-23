@@ -15,7 +15,6 @@ use crate::state::{
     retry_or_initialize_shortcut_manager, set_shortcut_status, with_shortcut_manager, AppState,
     StatusEvent,
 };
-use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Manager, State};
 
@@ -41,8 +40,12 @@ pub async fn check_server_url(server_url: String) -> Result<(), String> {
     crate::transcription::check_server(&server_url).await
 }
 
-#[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
+#[tauri::command(async)]
+#[allow(clippy::needless_pass_by_value)]
+// Tauri command parameters are framework-injected.
+// On non-Linux builds the infallible arm is the whole body, but the Result
+// shape is part of the command contract shared with the Linux arm.
+#[cfg_attr(not(target_os = "linux"), allow(clippy::unnecessary_wraps))]
 pub fn get_shortcut_permission_setup(
     app: AppHandle,
 ) -> Result<crate::permissions::ShortcutPermissionSetup, String> {
@@ -92,59 +95,44 @@ pub fn get_shortcut_backend_status(
 }
 
 #[tauri::command]
-#[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
-pub fn retry_shortcut_backend(app: AppHandle) -> Result<ShortcutBackendStatus, String> {
-    let app_for_retry = app.clone();
-    let (sender, receiver) = mpsc::sync_channel(1);
-    std::thread::Builder::new()
-        .name("slovo-shortcut-retry".into())
-        .spawn(move || {
-            let state = app_for_retry.state::<AppState>();
-            let hotkey = state
-                .settings
-                .lock()
-                .map(|runtime| runtime.registered_hotkey.clone())
-                .map_err(|_| "settings lock poisoned".to_owned());
-            let result = hotkey.and_then(|hotkey| {
-                retry_or_initialize_shortcut_manager(
-                    &state,
-                    BackendKind::WaylandHelper,
-                    |manager| manager.retry(&app_for_retry).map_err(|e| e.to_string()),
-                    || ShortcutManager::wayland(app_for_retry.clone()).map_err(|e| e.to_string()),
-                    |manager| {
-                        let chord = hotkey
-                            .parse::<ShortcutChord>()
-                            .map_err(|error| error.to_string())?;
-                        manager
-                            .replace(&app_for_retry, chord)
-                            .map_err(|e| e.to_string())
-                    },
-                )
-            });
+pub async fn retry_shortcut_backend(app: AppHandle) -> Result<ShortcutBackendStatus, String> {
+    // The retry performs blocking helper IPC (bounded by COMMAND_TIMEOUT per
+    // call). Async commands run off the main thread, and spawn_blocking keeps
+    // the blocking work off the async workers; the outer timeout preserves the
+    // hard bound the previous main-thread recv_timeout provided.
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        tauri::async_runtime::spawn_blocking(move || retry_shortcut_backend_blocking(app)),
+    )
+    .await
+    .map_err(|_| "Повторный запуск службы горячих клавиш не завершился вовремя.".to_owned())?
+    .map_err(|_| "Служба повторного запуска горячих клавиш остановлена.".to_owned())?
+}
 
-            let status = state
-                .shortcut
-                .lock()
-                .map(|runtime| runtime.status.clone())
-                .unwrap_or_else(|_| ShortcutBackendStatus::Failed {
-                    backend: BackendKind::WaylandHelper,
-                    detail: "shortcut lock poisoned".to_owned(),
-                });
-            set_shortcut_status(&app_for_retry, status);
-            let _ = sender.send(result);
-        })
-        .map_err(|error| format!("cannot start shortcut retry: {error}"))?;
-    let status =
-        receiver
-            .recv_timeout(Duration::from_secs(10))
-            .map_err(|error| match error {
-                mpsc::RecvTimeoutError::Timeout => {
-                    "Повторный запуск службы горячих клавиш не завершился вовремя.".to_owned()
-                }
-                mpsc::RecvTimeoutError::Disconnected => {
-                    "Служба повторного запуска горячих клавиш остановлена.".to_owned()
-                }
-            })??;
+// `app` is owned because the whole fn runs inside a spawn_blocking closure,
+// which requires 'static.
+#[allow(clippy::needless_pass_by_value)]
+fn retry_shortcut_backend_blocking(app: AppHandle) -> Result<ShortcutBackendStatus, String> {
+    let state = app.state::<AppState>();
+    let hotkey = state
+        .settings
+        .lock()
+        .map(|runtime| runtime.registered_hotkey.clone())
+        .map_err(|_| "settings lock poisoned".to_owned());
+    let status = hotkey.and_then(|hotkey| {
+        retry_or_initialize_shortcut_manager(
+            &state,
+            BackendKind::WaylandHelper,
+            |manager| manager.retry(&app).map_err(|e| e.to_string()),
+            || ShortcutManager::wayland(app.clone()).map_err(|e| e.to_string()),
+            |manager| {
+                let chord = hotkey
+                    .parse::<ShortcutChord>()
+                    .map_err(|error| error.to_string())?;
+                manager.replace(&app, chord).map_err(|e| e.to_string())
+            },
+        )
+    })?;
     set_shortcut_status(&app, status.clone());
     Ok(status)
 }
@@ -167,8 +155,19 @@ pub fn set_hotkey_capture_active(state: State<'_, AppState>, active: bool, token
 
 #[tauri::command]
 #[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
-pub fn update_settings(app: AppHandle, settings: Settings) -> Result<Settings, String> {
-    let mut next = settings;
+pub async fn update_settings(app: AppHandle, settings: Settings) -> Result<Settings, String> {
+    // Hotkey replacement performs blocking helper IPC (up to COMMAND_TIMEOUT)
+    // and settings::save does synchronous file I/O; the whole sequence runs on
+    // the blocking pool so neither the main thread nor an async worker stalls.
+    tauri::async_runtime::spawn_blocking(move || update_settings_blocking(app, settings))
+        .await
+        .map_err(|error| format!("settings update task failed: {error}"))?
+}
+
+// `app` is owned because the whole fn runs inside a spawn_blocking closure,
+// which requires 'static.
+#[allow(clippy::needless_pass_by_value)]
+fn update_settings_blocking(app: AppHandle, mut next: Settings) -> Result<Settings, String> {
     next.server_url = crate::settings::normalize_server_url(&next.server_url)?;
     next.hotkey = canonicalize_hotkey(&next.hotkey)?;
     next.input_device = next

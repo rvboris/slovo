@@ -33,8 +33,8 @@ pub use state::AppState;
 mod tests {
     use super::permissions::{
         installed_rule_matches, log_permission_setup_dir, log_permission_setup_message,
-        permission_setup_dir_from_env_only, permission_setup_for_path, prepare_shortcut_rule,
-        shell_quote, SHORTCUT_RULE, SHORTCUT_RULE_NAME,
+        permission_setup_dir_from_env_only, permission_setup_for_path, shell_quote, SHORTCUT_RULE,
+        SHORTCUT_RULE_NAME,
     };
     use crate::hotkey::{canonicalize_hotkey, parse_hotkey};
     use std::path::{Path, PathBuf};
@@ -140,7 +140,7 @@ mod tests {
             std::thread::current()
                 .name()
                 .unwrap_or("unnamed")
-                .replace(":", "-")
+                .replace(':', "-")
         ));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();

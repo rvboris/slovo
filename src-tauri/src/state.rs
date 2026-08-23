@@ -263,6 +263,9 @@ fn get_or_create_recording_overlay(app: &AppHandle) -> Result<WebviewWindow, Str
         .map_err(|error| format!("cannot build recording overlay: {error}"))
 }
 
+// Physical-pixel arithmetic on bounded overlay/monitor dimensions; the values
+// are far outside i32 overflow territory by construction.
+#[allow(clippy::cast_possible_truncation)]
 fn show_recording_overlay(window: &WebviewWindow) -> Result<(), String> {
     const OVERLAY_W: f64 = 172.0;
     const OVERLAY_H: f64 = 48.0;
@@ -390,6 +393,10 @@ pub(crate) fn initialize_shortcut_manager(
     initialize_shortcut_manager_locked(state, backend, construct, configure)
 }
 
+// Lock guards are intentionally held to the end of each branch: the shortcut
+// mutex is the publication point for status changes and this interleaving is
+// covered by the tests below.
+#[allow(clippy::significant_drop_tightening)]
 fn initialize_shortcut_manager_locked(
     state: &AppState,
     backend: crate::shortcut::BackendKind,
@@ -601,6 +608,8 @@ pub(crate) fn set_shortcut_status(app: &AppHandle, status: ShortcutBackendStatus
 }
 
 #[cfg(test)]
+// Assertions intentionally hold the guard while checking invariants.
+#[allow(clippy::significant_drop_tightening)]
 mod tests {
     use super::*;
 

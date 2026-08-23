@@ -65,7 +65,7 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
     };
     match action {
         Action::Start => {
-            check_server_and_start_recording(app, trigger_type == TriggerType::AutoVad)
+            check_server_and_start_recording(app, trigger_type == TriggerType::AutoVad);
         }
         Action::Stop => stop_recording(app),
         Action::None => {}
@@ -74,7 +74,10 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
 
 pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
-        eprintln!("[slovo] shortcut plugin event {shortcut:?} state={:?}", event.state());
+        eprintln!(
+            "[slovo] shortcut plugin event {shortcut:?} state={:?}",
+            event.state()
+        );
     }
     let app_state = app.state::<AppState>();
     let registered = match app_state.settings.lock() {
@@ -121,20 +124,19 @@ fn check_server_and_start_recording(app: &AppHandle, auto_vad: bool) {
     let Some(token) = state.begin_recording_start() else {
         return;
     };
-    let server_url = match state.settings.lock() {
-        Ok(runtime) => runtime.settings.server_url.clone(),
-        Err(_) => {
-            state.finish_recording_start(token);
-            if let Ok(mut trigger) = state.trigger.lock() {
-                trigger.force_idle();
-            }
-            emit_status(
-                app,
-                StatusKind::Error,
-                Some("Не удалось прочитать адрес сервера.".to_owned()),
-            );
-            return;
+    let server_url = if let Ok(runtime) = state.settings.lock() {
+        runtime.settings.server_url.clone()
+    } else {
+        state.finish_recording_start(token);
+        if let Ok(mut trigger) = state.trigger.lock() {
+            trigger.force_idle();
         }
+        emit_status(
+            app,
+            StatusKind::Error,
+            Some("Не удалось прочитать адрес сервера.".to_owned()),
+        );
+        return;
     };
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -144,7 +146,7 @@ fn check_server_and_start_recording(app: &AppHandle, auto_vad: bool) {
             return;
         }
         match check {
-            Ok(()) => start_recording(&app, auto_vad, token),
+            Ok(()) => start_recording(&app, auto_vad, token).await,
             Err(error) => {
                 if state.finish_recording_start(token) {
                     if let Ok(mut trigger) = state.trigger.lock() {
@@ -157,22 +159,30 @@ fn check_server_and_start_recording(app: &AppHandle, auto_vad: bool) {
     });
 }
 
-fn start_recording(app: &AppHandle, auto_vad: bool, token: u64) {
-    let app_for_stop = app.clone();
+async fn start_recording(app: &AppHandle, auto_vad: bool, token: u64) {
     let state = app.state::<AppState>();
     let device_name = state
         .settings
         .lock()
         .ok()
         .and_then(|runtime| runtime.settings.input_device.clone());
-    let result = state.audio.start(
-        auto_vad,
-        device_name,
-        Box::new(move || {
-            let app = app_for_stop.clone();
-            tauri::async_runtime::spawn(async move { stop_recording(&app) });
-        }),
-    );
+    let app_for_stop = app.clone();
+    let app_for_start = app.clone();
+    // Opening the microphone blocks on device enumeration and stream setup;
+    // run it on the blocking pool instead of an async worker.
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        app_for_start.state::<AppState>().audio.start(
+            auto_vad,
+            device_name,
+            Box::new(move || {
+                let app = app_for_stop.clone();
+                tauri::async_runtime::spawn(async move { stop_recording(&app) });
+            }),
+        )
+    })
+    .await
+    .map_err(|error| format!("audio start task failed: {error}"))
+    .and_then(|result| result);
     match result {
         Ok(opened_device_name) if state.finish_recording_start(token) => {
             let started = Instant::now();
@@ -241,7 +251,7 @@ fn spawn_audio_level_loop(app: AppHandle, started: Instant, device_name: String)
             let still_current = state
                 .recording
                 .lock()
-                .map_or(false, |recording| *recording == Some(started));
+                .is_ok_and(|recording| *recording == Some(started));
             if !still_current {
                 break;
             }
@@ -274,35 +284,64 @@ pub(crate) fn stop_recording(app: &AppHandle) {
     if let Ok(mut trigger) = state.trigger.lock() {
         trigger.force_idle();
     }
-    let wav = match state.audio.stop() {
-        Ok(wav) => wav,
-        Err(error) => {
-            emit_status(app, StatusKind::Error, Some(error));
-            return;
-        }
-    };
-    emit_status(app, StatusKind::Transcribing, None);
-    let server_url = state
-        .settings
-        .lock()
-        .map(|runtime| runtime.settings.server_url.clone())
-        .unwrap_or_default();
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
+        // WAV finalization drains, resamples, and encodes up to MAX_DURATION of
+        // audio; on the blocking pool it can never stall the shortcut dispatch
+        // thread or an async worker.
+        let finalize_app = app.clone();
+        let wav = match tauri::async_runtime::spawn_blocking(move || {
+            finalize_app.state::<AppState>().audio.stop()
+        })
+        .await
+        {
+            Ok(Ok(wav)) => wav,
+            Ok(Err(error)) => {
+                emit_status(&app, StatusKind::Error, Some(error));
+                return;
+            }
+            Err(error) => {
+                emit_status(
+                    &app,
+                    StatusKind::Error,
+                    Some(format!("audio finalize task failed: {error}")),
+                );
+                return;
+            }
+        };
+        emit_status(&app, StatusKind::Transcribing, None);
+        let server_url = app
+            .state::<AppState>()
+            .settings
+            .lock()
+            .map(|runtime| runtime.settings.server_url.clone())
+            .unwrap_or_default();
         match transcription::transcribe(&server_url, wav).await {
             Ok(text) if text.trim().is_empty() => emit_status(&app, StatusKind::Ready, None),
-            Ok(text) => match output::copy_and_insert(&text) {
-                Ok(true) => emit_status(&app, StatusKind::Inserted, Some(text)),
-                Ok(false) => emit_status(
-                    &app,
-                    StatusKind::Copied,
-                    Some("Copied to clipboard; paste injection is unavailable".into()),
-                ),
-                Err(error) if error.starts_with("clipboard populated;") => {
-                    emit_status(&app, StatusKind::Copied, Some(error));
+            Ok(text) => {
+                // Clipboard writes and paste injection spawn helper processes
+                // (and on Wayland sleep through a focus-restoration race):
+                // blocking work, kept off the async worker.
+                let paste_text = text.clone();
+                let inserted = tauri::async_runtime::spawn_blocking(move || {
+                    output::copy_and_insert(&paste_text)
+                })
+                .await
+                .map_err(|error| format!("paste task failed: {error}"))
+                .and_then(|result| result);
+                match inserted {
+                    Ok(true) => emit_status(&app, StatusKind::Inserted, Some(text)),
+                    Ok(false) => emit_status(
+                        &app,
+                        StatusKind::Copied,
+                        Some("Copied to clipboard; paste injection is unavailable".into()),
+                    ),
+                    Err(error) if error.starts_with("clipboard populated;") => {
+                        emit_status(&app, StatusKind::Copied, Some(error));
+                    }
+                    Err(error) => emit_status(&app, StatusKind::Error, Some(error)),
                 }
-                Err(error) => emit_status(&app, StatusKind::Error, Some(error)),
-            },
+            }
             Err(error) => emit_status(&app, StatusKind::Error, Some(error)),
         }
     });

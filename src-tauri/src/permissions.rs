@@ -10,11 +10,15 @@ use serde::Serialize;
 #[cfg(unix)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
 
+// The items below are exercised by cross-platform unit tests but only used by
+// production code on Linux (the udev/permission flow); without the cfg_attr
+// they would trip dead_code warnings on Windows builds.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) const SHORTCUT_RULE_NAME: &str = "72-slovo-input-helper.rules";
 pub(crate) const SHORTCUT_RULE_DESTINATION: &str =
     "/usr/lib/udev/rules.d/72-slovo-input-helper.rules";
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) const SHORTCUT_RULE: &str = include_str!("../resources/72-slovo-input-helper.rules");
 
 #[derive(Debug, Clone, Serialize)]
@@ -36,6 +40,7 @@ pub(crate) fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', "'\\''"))
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn installed_rule_matches(path: &Path) -> bool {
     std::fs::read(path).is_ok_and(|content| content == SHORTCUT_RULE.as_bytes())
 }
@@ -64,6 +69,7 @@ pub(crate) fn prepare_shortcut_rule(directory: &Path) -> Result<PathBuf, String>
 }
 
 #[cfg(not(unix))]
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn prepare_shortcut_rule(_directory: &Path) -> Result<PathBuf, String> {
     Err("permission setup is supported only on Linux".into())
 }
@@ -125,6 +131,7 @@ pub(crate) fn permission_setup_in_directory(
 /// dev/embedded configurations it returns `Err`. As a no-new-dependency fallback
 /// we honor `XDG_CONFIG_HOME` / `HOME` manually and join the Tauri identifier,
 /// matching the same `com.slovo.app` path the app uses elsewhere.
+#[cfg(target_os = "linux")]
 pub(crate) fn resolve_permission_setup_dir(app: &AppHandle) -> Result<PathBuf, String> {
     if let Ok(directory) = app.path().app_config_dir() {
         return Ok(directory);
@@ -135,6 +142,7 @@ pub(crate) fn resolve_permission_setup_dir(app: &AppHandle) -> Result<PathBuf, S
 /// No-new-dependency fallback honored when Tauri cannot resolve the config dir.
 /// Resolves `$XDG_CONFIG_HOME/com.slovo.app` or `$HOME/.config/com.slovo.app`,
 /// matching `dirs::config_dir()` semantics joined with the Tauri identifier.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn permission_setup_dir_from_env_only() -> Result<PathBuf, String> {
     let config_dir = std::env::var_os("XDG_CONFIG_HOME")
         .filter(|value| !value.is_empty())
@@ -151,12 +159,14 @@ pub(crate) fn permission_setup_dir_from_env_only() -> Result<PathBuf, String> {
 
 /// Emits a diagnostic line that survives both interactive and piped stderr by
 /// flushing explicitly. Uses `[slovo]` so it can be grepped from the run log.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn log_permission_setup_message(message: &str) {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "[slovo] {message}");
     let _ = std::io::stderr().flush();
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub(crate) fn log_permission_setup_dir(directory: &Result<PathBuf, String>) {
     match directory {
         Ok(path) => log_permission_setup_message(&format!(

@@ -25,14 +25,19 @@ pub enum ShortcutBackendStatus {
         #[serde(rename = "deviceCount", skip_serializing_if = "Option::is_none")]
         device_count: Option<usize>,
     },
+    // These states are only ever produced by the Linux Wayland supervisor;
+    // every platform still matches and serializes them.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     PermissionDenied {
         detail: String,
         #[serde(rename = "setupAvailable")]
         setup_available: bool,
     },
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     DevicesUnavailable {
         detail: String,
     },
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Restarting {
         backend: BackendKind,
     },
@@ -62,9 +67,11 @@ impl ShortcutBackendStatus {
 pub enum LinuxSession {
     Wayland,
     X11,
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
     Unknown,
 }
 
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn detect_linux_session(
     xdg_session_type: Option<&str>,
     wayland_display: Option<&str>,
@@ -137,6 +144,11 @@ impl ShortcutManager {
         }
     }
 
+    // On non-Linux builds only the Native arm compiles, where retry is a
+    // no-op that needs neither `&mut self` nor the error path; the signature
+    // stays uniform so callers and the Wayland arm keep one contract.
+    #[cfg_attr(not(target_os = "linux"), allow(clippy::needless_pass_by_ref_mut))]
+    #[cfg_attr(not(target_os = "linux"), allow(clippy::unnecessary_wraps))]
     pub fn retry(&mut self, _app: &tauri::AppHandle) -> Result<(), ShortcutError> {
         match self {
             Self::Native(_) => Ok(()),
@@ -145,6 +157,7 @@ impl ShortcutManager {
         }
     }
 
+    #[cfg_attr(not(target_os = "linux"), allow(clippy::unused_self))]
     pub fn invalidate(&self) {
         #[cfg(target_os = "linux")]
         if let Self::Wayland(backend) = self {
