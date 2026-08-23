@@ -33,6 +33,7 @@ export default function App() {
   );
 
   const hideError = useCallback(() => {
+    lastFailedActionRef.current = null;
     setErrorMessage("");
   }, []);
 
@@ -92,7 +93,7 @@ export default function App() {
   // Input devices
   const {
     options: deviceOptions,
-    load: loadInputDevices,
+    reload: reloadInputDevices,
     isLoading: areInputDevicesLoading,
   } = useInputDevices(settings.inputDevice, showError);
 
@@ -111,11 +112,12 @@ export default function App() {
     onError: showError,
   });
 
-  // Initial load
+  // Initial load — deliberately mount-only: the loaders are idempotent, and
+  // their identities change across renders, so listing them as dependencies
+  // would re-run the fetch on every update.
   useEffect(() => {
     void loadSettings();
     void loadShortcutStatus();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleVerify = useCallback(() => {
@@ -172,7 +174,7 @@ export default function App() {
           value={settings.inputDevice}
           options={deviceOptions}
           isLoading={areInputDevicesLoading}
-          onLoad={() => void loadInputDevices()}
+          onRefresh={() => void reloadInputDevices()}
           onChange={handleDeviceChange}
         />
 

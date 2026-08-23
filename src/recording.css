@@ -31,7 +31,7 @@ body {
   border-radius: 22px;
   background: linear-gradient(145deg, rgba(34, 36, 43, 0.92), rgba(18, 20, 25, 0.94));
   color: #f4f5f7;
-  /* ponytail: no outer box-shadow — the window clips it and on
+  /* No outer box-shadow — the window clips it and on
      XWayland/WebKitGTK the clipped shadow composites against an opaque
      canvas, producing a dark halo.  Add back if the compositor changes. */
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);

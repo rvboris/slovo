@@ -11,7 +11,7 @@ interface InputDeviceSettingProps {
   value: string | null;
   options: { value: string; label: string }[];
   isLoading: boolean;
-  onLoad: () => void;
+  onRefresh: () => void;
   onChange: (value: string | null) => void;
 }
 
@@ -19,7 +19,7 @@ export function InputDeviceSetting({
   value,
   options,
   isLoading,
-  onLoad,
+  onRefresh,
   onChange,
 }: InputDeviceSettingProps) {
   const selectValue = value === null ? "__default__" : value;
@@ -38,7 +38,9 @@ export function InputDeviceSetting({
         value={selectValue}
         onValueChange={handleChange}
         onOpenChange={(open) => {
-          if (open) onLoad();
+          // Opening the dropdown force-refreshes the device list so a
+          // newly plugged microphone appears without an app restart.
+          if (open) onRefresh();
         }}
       >
         <SelectTrigger id="input-device">

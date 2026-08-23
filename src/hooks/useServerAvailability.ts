@@ -60,19 +60,15 @@ export function useServerAvailability(url: string, enabled: boolean) {
     setResult({ status: "checking", url: normalizedUrl });
 
     try {
-      const available = await invoke<boolean | null>(
-        "check_server_url",
-        { serverUrl: normalizedUrl },
-      );
+      // The command resolves (available) or rejects (unavailable); it carries
+      // no payload, so the outcome comes from the promise state alone.
+      await invoke<void>("check_server_url", { serverUrl: normalizedUrl });
       if (
         mountedRef.current &&
         revision === requestRevisionRef.current &&
         normalizeValidUrl(currentUrlRef.current) === normalizedUrl
       ) {
-        setResult({
-          status: available === false ? "unavailable" : "available",
-          url: normalizedUrl,
-        });
+        setResult({ status: "available", url: normalizedUrl });
       }
     } catch {
       if (
@@ -92,11 +88,24 @@ export function useServerAvailability(url: string, enabled: boolean) {
     }
 
     void check(currentUrlRef.current);
+    // Skip periodic checks while the window is hidden (no UI to update, no
+    // reason to hit the network); re-check as soon as it becomes visible.
     const interval = window.setInterval(() => {
-      if (!checksSuspendedRef.current) void check(currentUrlRef.current);
+      if (!checksSuspendedRef.current && !document.hidden) {
+        void check(currentUrlRef.current);
+      }
     }, CHECK_INTERVAL_MS);
+    const onVisibilityChange = () => {
+      if (!document.hidden && !checksSuspendedRef.current) {
+        void check(currentUrlRef.current);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, [enabled, check, invalidate]);
 
   const currentNormalizedUrl = normalizeValidUrl(url);

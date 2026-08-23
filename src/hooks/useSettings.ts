@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   type Settings,
@@ -25,6 +25,16 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
   const revisionRef = useRef(0);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const serverTimerRef = useRef<number | undefined>(undefined);
+  const savedIndicatorTimerRef = useRef<number | undefined>(undefined);
+
+  // A pending "saved" indicator timeout must never fire after unmount.
+  useEffect(() => {
+    return () => {
+      if (savedIndicatorTimerRef.current !== undefined) {
+        window.clearTimeout(savedIndicatorTimerRef.current);
+      }
+    };
+  }, []);
 
   const setSaveStateHelper = useCallback(
     (text: string, kind: SaveKind = "idle") => {
@@ -53,11 +63,13 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
           if (revision === revisionRef.current) {
             setSettings(saved);
             setSaveStateHelper("Изменения сохранены", "saved");
-            window.setTimeout(() => {
-              if (
-                revision === revisionRef.current &&
-                saveState.text === "Изменения сохранены"
-              ) {
+            if (savedIndicatorTimerRef.current !== undefined) {
+              window.clearTimeout(savedIndicatorTimerRef.current);
+            }
+            savedIndicatorTimerRef.current = window.setTimeout(() => {
+              // The revision guard alone decides staleness: a newer save (or
+              // an error path) bumps the revision before this fires.
+              if (revision === revisionRef.current) {
                 setSaveStateHelper("");
               }
             }, 1800);
@@ -78,7 +90,7 @@ export function useSettings({ onError, onClearError }: UseSettingsOptions) {
       queueRef.current = operation.catch(() => undefined);
       return operation;
     },
-    [onError, onClearError, setSaveStateHelper, saveState.text],
+    [onError, onClearError, setSaveStateHelper],
   );
 
   const loadSettings = useCallback(async (): Promise<void> => {

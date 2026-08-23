@@ -33,9 +33,9 @@ let startedAt = performance.now();
 let offsetSeconds = 0;
 let timer: number | undefined;
 
-// ponytail: EMA smoothing — one-pole filter, ~150ms time constant at the
-// ~60fps event rate backend emits. Cheaper than a ring buffer of raw samples
-// and hides mic jitter without a visible lag. Tune ALPHA up for snappier.
+// EMA smoothing — one-pole filter over the audio-level events the backend
+// emits every 80 ms (12.5 Hz). Cheaper than a ring buffer of raw samples and
+// hides mic jitter without a visible lag. Tune ALPHA up for snappier.
 const LEVEL_ALPHA = 0.18;
 const REDUCED_MOTION = window.matchMedia(
   "(prefers-reduced-motion: reduce)",
@@ -226,6 +226,8 @@ function applyStatus(payload: RuntimeStatus): void {
   }
 }
 
+// Listener setup can reject when the IPC bridge is unavailable; the overlay
+// is a passive display, so failures leave it in its initial hidden state.
 void listen<AudioLevelPayload>("slovo://audio-level", ({ payload }) => {
   const level =
     payload && typeof payload === "object" && "level" in payload
@@ -234,14 +236,14 @@ void listen<AudioLevelPayload>("slovo://audio-level", ({ payload }) => {
         : 0
       : 0;
   pushVoiceLevel(level);
-});
+}).catch(() => undefined);
 
 let receivedLiveStatus = false;
 
 void listen<RuntimeStatus>("slovo://status", ({ payload }) => {
   receivedLiveStatus = true;
   applyStatus(payload);
-});
+}).catch(() => undefined);
 
 void invoke<RuntimeStatus>("get_status")
   .then((payload) => {
