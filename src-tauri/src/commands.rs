@@ -122,14 +122,13 @@ pub fn retry_shortcut_backend(app: AppHandle) -> Result<ShortcutBackendStatus, S
                 )
             });
 
-            let status = state
-                .shortcut
-                .lock()
-                .map(|runtime| runtime.status.clone())
-                .unwrap_or_else(|_| ShortcutBackendStatus::Failed {
+            let status = state.shortcut.lock().map_or_else(
+                |_| ShortcutBackendStatus::Failed {
                     backend: BackendKind::WaylandHelper,
                     detail: "shortcut lock poisoned".to_owned(),
-                });
+                },
+                |runtime| runtime.status.clone(),
+            );
             set_shortcut_status(&app_for_retry, status);
             let _ = sender.send(result);
         })

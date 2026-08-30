@@ -140,7 +140,7 @@ mod tests {
             std::thread::current()
                 .name()
                 .unwrap_or("unnamed")
-                .replace(":", "-")
+                .replace(':', "-")
         ));
         let _ = std::fs::remove_dir_all(&directory);
         std::fs::create_dir_all(&directory).unwrap();

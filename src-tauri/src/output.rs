@@ -41,7 +41,8 @@ fn set_clipboard(text: &str) -> Result<(), String> {
     }
 
     // X11: long-lived arboard handle.
-    let mut guard = clipboard_handle()
+    let clipboard_handle = clipboard_handle();
+    let mut guard = clipboard_handle
         .lock()
         .map_err(|_| "clipboard mutex poisoned".to_owned())?;
     if guard.is_none() {
@@ -52,6 +53,7 @@ fn set_clipboard(text: &str) -> Result<(), String> {
         *guard = None;
         return Err(format!("cannot write clipboard: {error}"));
     }
+    drop(guard);
     Ok(())
 }
 

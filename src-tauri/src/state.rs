@@ -9,6 +9,7 @@ use crate::audio::AudioController;
 use crate::settings::Settings;
 use crate::shortcut::{ShortcutBackendStatus, ShortcutManager};
 use crate::trigger::TriggerState;
+use num_traits::ToPrimitive;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -286,13 +287,22 @@ fn show_recording_overlay(window: &WebviewWindow) -> Result<(), String> {
         // taken effect yet, so outer_size() returns the stale default geometry
         // and the first-show position ends up shifted.
         let scale = monitor.scale_factor();
-        let window_w = (OVERLAY_W * scale).round() as i32;
-        let window_h = (OVERLAY_H * scale).round() as i32;
+        let window_w = (OVERLAY_W * scale)
+            .round()
+            .to_i32()
+            .ok_or_else(|| "recording overlay width exceeds supported range".to_owned())?;
+        let window_h = (OVERLAY_H * scale)
+            .round()
+            .to_i32()
+            .ok_or_else(|| "recording overlay height exceeds supported range".to_owned())?;
         let monitor_w = i32::try_from(monitor_size.width)
             .map_err(|_| "primary monitor width exceeds supported range".to_owned())?;
         let monitor_h = i32::try_from(monitor_size.height)
             .map_err(|_| "primary monitor height exceeds supported range".to_owned())?;
-        let bottom_margin = (28.0 * scale).round() as i32;
+        let bottom_margin = (28.0 * scale)
+            .round()
+            .to_i32()
+            .ok_or_else(|| "recording overlay margin exceeds supported range".to_owned())?;
         let x = monitor_position.x + (monitor_w - window_w) / 2;
         let y = monitor_position.y + monitor_h - window_h - bottom_margin;
         window
@@ -413,10 +423,8 @@ fn initialize_shortcut_manager_locked(
     let mut manager = match construct() {
         Ok(manager) => manager,
         Err(error) => {
-            let mut runtime = state
-                .shortcut
-                .lock()
-                .map_err(|_| "shortcut lock poisoned")?;
+            let shortcut = &state.shortcut;
+            let mut runtime = shortcut.lock().map_err(|_| "shortcut lock poisoned")?;
             if state.shortcut_stopping.load(Ordering::Acquire) {
                 return Err("shortcut backend is shutting down".to_owned());
             }
@@ -434,16 +442,15 @@ fn initialize_shortcut_manager_locked(
                     detail: error.clone(),
                 };
             }
+            drop(runtime);
             return Err(error);
         }
     };
 
     if let Err(error) = configure(&mut manager) {
         let manager_status = manager.status();
-        let mut runtime = state
-            .shortcut
-            .lock()
-            .map_err(|_| "shortcut lock poisoned")?;
+        let shortcut = &state.shortcut;
+        let mut runtime = shortcut.lock().map_err(|_| "shortcut lock poisoned")?;
         if state.shortcut_stopping.load(Ordering::Acquire) {
             manager.invalidate();
             return Err("shortcut backend is shutting down".to_owned());
@@ -456,17 +463,17 @@ fn initialize_shortcut_manager_locked(
                 detail: error.clone(),
             },
         };
+        drop(runtime);
         return Err(error);
     }
 
     let manager_status = manager.status();
-    let mut runtime = state
-        .shortcut
-        .lock()
-        .map_err(|_| "shortcut lock poisoned")?;
+    let shortcut = &state.shortcut;
+    let mut runtime = shortcut.lock().map_err(|_| "shortcut lock poisoned")?;
     if state.shortcut_stopping.load(Ordering::Acquire) {
         manager.invalidate();
         runtime.status = ShortcutBackendStatus::ShuttingDown;
+        drop(runtime);
         return Err("shortcut backend is shutting down".to_owned());
     }
     let status_was_newly_published = runtime.status_revision != status_revision_before_construct
@@ -485,6 +492,7 @@ fn initialize_shortcut_manager_locked(
     // The operations lock makes this assignment atomic with the absence check.
     runtime.manager = Some(manager);
     runtime.status = status.clone();
+    drop(runtime);
     Ok(status)
 }
 
@@ -751,6 +759,7 @@ mod tests {
                 detail: "spawn failed".to_owned(),
             }
         );
+        drop(runtime);
     }
 
     #[test]
@@ -807,6 +816,7 @@ mod tests {
         let runtime = state.shortcut.lock().unwrap();
         assert!(runtime.manager.is_none());
         assert_eq!(runtime.status, ShortcutBackendStatus::ShuttingDown);
+        drop(runtime);
     }
 
     #[test]
@@ -928,6 +938,7 @@ mod tests {
             }
         );
         assert!(runtime.manager.is_some());
+        drop(runtime);
     }
 
     #[test]

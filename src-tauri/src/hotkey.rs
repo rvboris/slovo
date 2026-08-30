@@ -65,7 +65,7 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
     };
     match action {
         Action::Start => {
-            check_server_and_start_recording(app, trigger_type == TriggerType::AutoVad)
+            check_server_and_start_recording(app, trigger_type == TriggerType::AutoVad);
         }
         Action::Stop => stop_recording(app),
         Action::None => {}
@@ -74,7 +74,10 @@ pub fn handle_hotkey_action(app: &AppHandle, event: HotkeyEvent) {
 
 pub(crate) fn handle_shortcut(app: &AppHandle, shortcut: &Shortcut, event: ShortcutEvent) {
     if std::env::var_os("SLOVO_EVDEV_DEBUG").is_some_and(|value| value == "1") {
-        eprintln!("[slovo] shortcut plugin event {shortcut:?} state={:?}", event.state());
+        eprintln!(
+            "[slovo] shortcut plugin event {shortcut:?} state={:?}",
+            event.state()
+        );
     }
     let app_state = app.state::<AppState>();
     let registered = match app_state.settings.lock() {
@@ -121,21 +124,20 @@ fn check_server_and_start_recording(app: &AppHandle, auto_vad: bool) {
     let Some(token) = state.begin_recording_start() else {
         return;
     };
-    let server_url = match state.settings.lock() {
-        Ok(runtime) => runtime.settings.server_url.clone(),
-        Err(_) => {
-            state.finish_recording_start(token);
-            if let Ok(mut trigger) = state.trigger.lock() {
-                trigger.force_idle();
-            }
-            emit_status(
-                app,
-                StatusKind::Error,
-                Some("Не удалось прочитать адрес сервера.".to_owned()),
-            );
-            return;
+    let Ok(runtime) = state.settings.lock() else {
+        state.finish_recording_start(token);
+        if let Ok(mut trigger) = state.trigger.lock() {
+            trigger.force_idle();
         }
+        emit_status(
+            app,
+            StatusKind::Error,
+            Some("Не удалось прочитать адрес сервера.".to_owned()),
+        );
+        return;
     };
+    let server_url = runtime.settings.server_url.clone();
+    drop(runtime);
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let check = transcription::check_server(&server_url).await;
@@ -241,7 +243,7 @@ fn spawn_audio_level_loop(app: AppHandle, started: Instant, device_name: String)
             let still_current = state
                 .recording
                 .lock()
-                .map_or(false, |recording| *recording == Some(started));
+                .is_ok_and(|recording| *recording == Some(started));
             if !still_current {
                 break;
             }

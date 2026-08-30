@@ -83,7 +83,7 @@ impl AudioController {
                                 auto_vad,
                                 device_name.as_deref(),
                                 on_auto_stop,
-                                Arc::clone(&worker_level),
+                                &worker_level,
                             )
                             .map(|(recording, opened_name)| {
                                 active = Some(recording);
@@ -166,7 +166,7 @@ fn open_stream(
     auto_vad: bool,
     device_name: Option<&str>,
     on_auto_stop: StopCallback,
-    level: Arc<AtomicU32>,
+    level: &Arc<AtomicU32>,
 ) -> Result<(ActiveRecording, String), String> {
     let host = cpal::default_host();
     let device = match device_name.map(str::trim) {
@@ -530,12 +530,12 @@ mod tests {
     #[test]
     fn normalizes_level_into_unit_range() {
         // Silence / invalid inputs collapse to zero.
-        assert_eq!(normalize_level(0.0), 0.0);
-        assert_eq!(normalize_level(-1.0), 0.0);
-        assert_eq!(normalize_level(f32::NAN), 0.0);
+        assert!(normalize_level(0.0).abs() < f32::EPSILON);
+        assert!(normalize_level(-1.0).abs() < f32::EPSILON);
+        assert!(normalize_level(f32::NAN).abs() < f32::EPSILON);
         // The full-scale ceiling saturates to 1.0 and never exceeds it.
         assert!((normalize_level(LEVEL_FULL_SCALE_RMS) - 1.0).abs() < 1e-6);
-        assert_eq!(normalize_level(LEVEL_FULL_SCALE_RMS * 4.0), 1.0);
+        assert!((normalize_level(LEVEL_FULL_SCALE_RMS * 4.0) - 1.0).abs() < f32::EPSILON);
         // Quiet background noise (just under the VAD floor) reads low but
         // non-zero, loud speech (a few times the floor) lands high.
         assert!(normalize_level(VAD_MIN_THRESHOLD) < 0.45);
