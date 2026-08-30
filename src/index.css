@@ -107,6 +107,43 @@ body {
   z-index: 0;
 }
 
+.titlebar {
+  box-shadow: 0 1px 0 color-mix(in oklch, var(--border), transparent 25%);
+}
+
+[data-tauri-drag-region] {
+  cursor: grab;
+}
+
+[data-tauri-drag-region]:active {
+  cursor: grabbing;
+}
+
+.titlebar-control {
+  display: grid;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: calc(var(--radius) - 2px);
+  color: var(--muted-foreground);
+  transition: color 150ms var(--ease-out-fast), background-color 150ms var(--ease-out-fast);
+}
+
+.titlebar-control:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.titlebar-close:hover {
+  background: var(--destructive);
+  color: var(--destructive-foreground);
+}
+
+.titlebar-control:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
   /* Single very faint corner glow of the accent — atmosphere, not noise.
      Kept under 8% and pinned top-right so it never sits behind inputs. */
 body::before {

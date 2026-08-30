@@ -17,7 +17,8 @@
         "width": 560,
         "height": 560,
         "resizable": false,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false
       },
       {
         "label": "recording-overlay",
