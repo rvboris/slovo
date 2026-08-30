@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/rvboris/slovo/compare/slovo-v0.5.0...slovo-v0.6.0) (2026-08-30)
+
+
+### Features
+
+* add custom window chrome ([0b9e212](https://github.com/rvboris/slovo/commit/0b9e21207e16cfb41b07467e535e1e9797287681))
+
+
+### Bug Fixes
+
+* enforce Rust quality checks ([d24acc5](https://github.com/rvboris/slovo/commit/d24acc5c53f17b41b8af3209c089f9418e009bdf))
+
 ## [0.5.0](https://github.com/rvboris/slovo/compare/slovo-v0.4.1...slovo-v0.5.0) (2026-08-22)
 
 
