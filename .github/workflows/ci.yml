@@ -28,5 +28,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
+      - run: node scripts/build-helper.js --debug
       - run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: src-tauri
