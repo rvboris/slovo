@@ -1,252 +1,300 @@
+import { LogicalSize, PhysicalPosition, getCurrentWindow } from "@tauri-apps/api/window";
+import type { StatusPayload as RuntimeStatus } from "./lib/types";
+import { formatElapsed } from "./lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
-type RuntimeStatus = {
-  kind: string;
-  message?: string;
-  elapsedSeconds?: number;
-};
-
-const indicatorElement =
-  document.querySelector<HTMLElement>(".recording-indicator");
-const recordingStateElement =
-  document.querySelector<HTMLElement>("#recording-state");
-const errorStateElement = document.querySelector<HTMLElement>("#error-state");
-const timeElement = document.querySelector<HTMLTimeElement>("#recording-time");
-
-if (
-  !indicatorElement ||
-  !recordingStateElement ||
-  !errorStateElement ||
-  !timeElement
-) {
-  throw new Error("Missing recording overlay elements");
+const PILL_HEIGHT = 44;
+const WINDOW_PADDING = 4;
+const MIN_AMPLITUDE = 0.15;
+const MILLISECONDS_PER_SECOND = 1000;
+const TIMER_INTERVAL = 250;
+const ZERO = 0;
+const ONE = 1;
+const MIRROR_FACTOR = 2;
+const MAX_PIXEL_RATIO = 2;
+const GLOW_BASE_RADIUS = 16;
+const GLOW_LEVEL_RADIUS = 26;
+const GLOW_CENTER_X = 22;
+const GLOW_WIDTH = 60;
+const AMPLITUDE_GAMMA = 0.75;
+const AMPLITUDE_HEIGHT_RATIO = 0.46;
+const GRADIENT_MIDPOINT = 0.5;
+const COLUMN_OVERLAP = 0.5;
+function requireElement(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector);
+  if (element === null) { throw new Error("Missing recording overlay elements"); }
+  return element;
 }
-
-const indicator = indicatorElement;
-const recordingState = recordingStateElement;
-const errorState = errorStateElement;
-const time = timeElement;
+const indicator = requireElement(".recording-indicator");
+const recordingState = requireElement("#recording-state");
+const errorState = requireElement("#error-state");
+const processingState = requireElement("#processing-state");
+const processingLabel = requireElement("#processing-label");
+const errorLabel = requireElement("#error-label");
+const time = document.querySelector<HTMLTimeElement>("#recording-time");
+if (time === null) { throw new Error("Missing recording overlay elements"); }
+const timeElement = time;
 const canvas = document.querySelector<HTMLCanvasElement>("#voice-canvas");
-
+const context = canvas?.getContext("2d") ?? null;
 let startedAt = performance.now();
-let offsetSeconds = 0;
-let timer: number | undefined;
-
-// ponytail: EMA smoothing — one-pole filter, ~150ms time constant at the
-// ~60fps event rate backend emits. Cheaper than a ring buffer of raw samples
-// and hides mic jitter without a visible lag. Tune ALPHA up for snappier.
+let offsetSeconds = ZERO;
+const animation: { rafId?: number; timer?: ReturnType<typeof globalThis.setInterval> } = {};
+// Ponytail: EMA smoothing — one-pole filter, ~150ms at the ~60fps event rate.
 const LEVEL_ALPHA = 0.18;
-const REDUCED_MOTION = window.matchMedia(
-  "(prefers-reduced-motion: reduce)",
-).matches;
-const LIGHT_THEME = window.matchMedia(
-  "(prefers-color-scheme: light)",
-).matches;
-
-// Ring buffer of smoothed amplitudes — one sample per rAF tick. The buffer
-// width matches the canvas columns, so each entry is one vertical slice of
-// the scrolling trace. Newest sample at the right edge, scrolling left.
+const REDUCED_MOTION = globalThis.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const LIGHT_THEME = globalThis.matchMedia("(prefers-color-scheme: light)").matches;
 const SAMPLES = 168;
+const LAST_SAMPLE = SAMPLES - ONE;
+const MIDPOINT = PILL_HEIGHT / MIRROR_FACTOR;
+const COLUMN_WIDTH = SAMPLES / SAMPLES;
 const levels = new Float32Array(SAMPLES);
-let smoothedLevel = 0;
-let rafId: number | undefined;
-
-type Theme = {
-  // Amplitude trace fill gradient stops (top → center → bottom mirrored).
-  trace: [string, string, string];
-  // Radial glow behind the dot, painted under the trace.
-  glow: string;
-};
-
-const THEME: Theme = LIGHT_THEME
-  ? {
-      trace: [
-        "rgba(232, 58, 77, 0.0)",
-        "rgba(232, 116, 76, 0.55)",
-        "rgba(207, 51, 68, 0.0)",
-      ],
+let smoothedLevel = ZERO;
+interface Theme { readonly glow: string; readonly trace: readonly [string, string, string] }
+function getTheme(): Theme {
+  if (LIGHT_THEME) {
+    return {
       glow: "rgba(232, 90, 90, 0.10)",
-    }
-  : {
-      trace: [
-        "rgba(255, 138, 92, 0.0)",
-        "rgba(255, 77, 94, 0.62)",
-        "rgba(255, 60, 110, 0.0)",
-      ],
-      glow: "rgba(255, 77, 94, 0.16)",
+      trace: ["rgba(232, 58, 77, 0.0)", "rgba(232, 116, 76, 0.55)", "rgba(207, 51, 68, 0.0)"],
     };
-
-function resetVoiceLevel(): void {
-  smoothedLevel = 0;
-  levels.fill(0);
-  stopVisualizer();
-  if (canvas) {
-    const ctx = canvas.getContext("2d");
-    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
-}
-
-type AudioLevelPayload = { level?: unknown };
-
-function pushVoiceLevel(raw: number): void {
-  // Only react while the recording dot is on screen; ignore stray events
-  // during error/idle so the visualizer never lies about state.
-  if (recordingState.hidden) return;
-
-  const target = Math.min(1, Math.max(0, raw));
-  smoothedLevel = smoothedLevel + (target - smoothedLevel) * LEVEL_ALPHA;
-}
-
-function startVisualizer(): void {
-  if (!canvas || rafId !== undefined) return;
-
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  // Size the backing store to device pixels once; the pill is fixed-size so
-  // no ResizeObserver needed. Cap dpr at 2 — beyond that is wasted fill on
-  // a 168px surface.
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  canvas.width = Math.round(168 * dpr);
-  canvas.height = Math.round(44 * dpr);
-  ctx.scale(dpr, dpr);
-
-  const W = 168;
-  const H = 44;
-  const MID = H / 2;
-
-  const draw = (): void => {
-    // Scroll the buffer left by one; append the latest smoothed level.
-    // Under reduced motion we skip the scroll and only redraw when the
-    // level changes — a calm static silhouette of recent amplitude.
-    if (!REDUCED_MOTION) {
-      levels.copyWithin(0, 1);
-      levels[SAMPLES - 1] = smoothedLevel;
-    } else if (levels[SAMPLES - 1] === smoothedLevel) {
-      rafId = window.requestAnimationFrame(draw);
-      return;
-    } else {
-      levels[SAMPLES - 1] = smoothedLevel;
-    }
-
-    ctx.clearRect(0, 0, W, H);
-
-    // Soft radial glow centered on the recording dot — ties the trace to
-    // the pulsing red dot and gives silence a faint heartbeat.
-    const glowR = 16 + smoothedLevel * 26;
-    const glow = ctx.createRadialGradient(22, MID, 0, 22, MID, glowR);
-    glow.addColorStop(0, THEME.glow);
-    glow.addColorStop(1, "rgba(0, 0, 0, 0)");
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, 60, H);
-
-    // Mirrored amplitude waveform: filled from center upward and downward.
-    // Amplitude mapped with a slight gamma so quiet speech still reads.
-    const colW = W / SAMPLES;
-    for (let i = 0; i < SAMPLES; i++) {
-      const v = levels[i];
-      // Age fade: newest columns brightest, oldest trail off — gives the
-      // scrolling motion a sense of direction without per-pixel alpha math.
-      const age = i / SAMPLES;
-      const amp = Math.pow(v, 0.75) * age;
-      const h = amp * (H * 0.46);
-      if (h < 0.15) continue;
-      const x = i * colW;
-      const grad = ctx.createLinearGradient(0, MID - h, 0, MID + h);
-      grad.addColorStop(0, THEME.trace[0]);
-      grad.addColorStop(0.5, THEME.trace[1]);
-      grad.addColorStop(1, THEME.trace[2]);
-      ctx.fillStyle = grad;
-      ctx.fillRect(x, MID - h, colW + 0.5, h * 2);
-    }
-
-    rafId = window.requestAnimationFrame(draw);
+  return {
+    glow: "rgba(255, 77, 94, 0.16)",
+    trace: ["rgba(255, 138, 92, 0.0)", "rgba(255, 77, 94, 0.62)", "rgba(255, 60, 110, 0.0)"],
   };
-
-  rafId = window.requestAnimationFrame(draw);
 }
-
+const THEME = getTheme();
 function stopVisualizer(): void {
-  if (rafId !== undefined) {
-    window.cancelAnimationFrame(rafId);
-    rafId = undefined;
+  if (animation.rafId !== undefined) {
+    globalThis.cancelAnimationFrame(animation.rafId);
+    animation.rafId = undefined;
   }
 }
-
-function render(seconds: number): void {
-  const total = Math.max(0, Math.floor(seconds));
-  const minutes = Math.floor(total / 60).toString().padStart(2, "0");
-  const remainder = (total % 60).toString().padStart(2, "0");
-  time.textContent = `${minutes}:${remainder}`;
-  time.dateTime = `PT${total}S`;
+function resetVoiceLevel(): void {
+  smoothedLevel = ZERO;
+  levels.fill(ZERO);
+  stopVisualizer();
+  if (canvas !== null) { canvas.getContext("2d")?.clearRect(ZERO, ZERO, canvas.width, canvas.height); }
 }
-
-function start(elapsedSeconds = 0): void {
+function pushVoiceLevel(raw: number): void {
+  // Ignore stray events while the recording dot is hidden.
+  if (recordingState.hidden === true) { return; }
+  const target = Math.min(ONE, Math.max(ZERO, raw));
+  smoothedLevel += (target - smoothedLevel) * LEVEL_ALPHA;
+}
+function drawGlow(): void {
+  if (context === null) { return; }
+  const radius = GLOW_BASE_RADIUS + smoothedLevel * GLOW_LEVEL_RADIUS;
+  const glow = context.createRadialGradient(GLOW_CENTER_X, MIDPOINT, ZERO, GLOW_CENTER_X, MIDPOINT, radius);
+  glow.addColorStop(ZERO, THEME.glow);
+  glow.addColorStop(ONE, "rgba(0, 0, 0, 0)");
+  context.fillStyle = glow;
+  context.fillRect(ZERO, ZERO, GLOW_WIDTH, PILL_HEIGHT);
+}
+function fillColumn(index: number, height: number): void {
+  if (context === null) { return; }
+  const gradient = context.createLinearGradient(ZERO, MIDPOINT - height, ZERO, MIDPOINT + height);
+  const [top, center, bottom] = THEME.trace;
+  gradient.addColorStop(ZERO, top);
+  gradient.addColorStop(GRADIENT_MIDPOINT, center);
+  gradient.addColorStop(ONE, bottom);
+  context.fillStyle = gradient;
+  context.fillRect(index * COLUMN_WIDTH, MIDPOINT - height, COLUMN_WIDTH + COLUMN_OVERLAP, height * MIRROR_FACTOR);
+}
+function drawColumn(index: number): void {
+  const height = levels[index] ** AMPLITUDE_GAMMA * (index / SAMPLES) * (PILL_HEIGHT * AMPLITUDE_HEIGHT_RATIO);
+  if (height < MIN_AMPLITUDE) { return; }
+  fillColumn(index, height);
+}
+function drawFrame(): void {
+  if (context === null) { return; }
+  context.clearRect(ZERO, ZERO, SAMPLES, PILL_HEIGHT);
+  drawGlow();
+  for (let index = ZERO; index < SAMPLES; index += ONE) {
+    drawColumn(index);
+  }
+}
+function animate(): void {
+  if (!REDUCED_MOTION) {
+    levels.copyWithin(ZERO, ONE);
+    levels[LAST_SAMPLE] = smoothedLevel;
+    drawFrame();
+  } else if (levels[LAST_SAMPLE] !== smoothedLevel) {
+    levels[LAST_SAMPLE] = smoothedLevel;
+    drawFrame();
+  }
+  animation.rafId = globalThis.requestAnimationFrame(animate);
+}
+function startVisualizer(): void {
+  if (canvas === null || animation.rafId !== undefined) { return; }
+  if (context === null) { return; }
+  const pixelRatio = Math.min(MAX_PIXEL_RATIO, globalThis.devicePixelRatio || ONE);
+  canvas.width = Math.round(SAMPLES * pixelRatio);
+  canvas.height = Math.round(PILL_HEIGHT * pixelRatio);
+  context.scale(pixelRatio, pixelRatio);
+  animation.rafId = globalThis.requestAnimationFrame(animate);
+}
+function render(seconds: number): void {
+  const total = Math.max(ZERO, Math.floor(seconds));
+  timeElement.textContent = formatElapsed(total);
+  timeElement.dateTime = `PT${total}S`;
+}
+function start(elapsedSeconds = ZERO): void {
   offsetSeconds = elapsedSeconds;
   startedAt = performance.now();
   render(offsetSeconds);
-  if (timer !== undefined) window.clearInterval(timer);
-  timer = window.setInterval(() => {
-    render(offsetSeconds + (performance.now() - startedAt) / 1000);
-  }, 250);
+  if (animation.timer !== undefined) { globalThis.clearInterval(animation.timer); }
+  animation.timer = globalThis.setInterval(() => {
+    render(offsetSeconds + (performance.now() - startedAt) / MILLISECONDS_PER_SECOND);
+  }, TIMER_INTERVAL);
 }
-
 function stop(): void {
-  if (timer !== undefined) window.clearInterval(timer);
-  timer = undefined;
-  render(0);
+  if (animation.timer !== undefined) { globalThis.clearInterval(animation.timer); }
+  animation.timer = undefined;
+  render(ZERO);
 }
-
-function showRecording(elapsedSeconds = 0): void {
-  indicator.classList.remove("is-loading", "is-error");
+const OVERLAY_W = 172;
+const OVERLAY_H = 48;
+const MAX_ERROR_W = 340;
+const MIN_PILL_W = 44;
+let overlayWidened = false;
+/** Resize the Tauri window, keeping its horizontal center fixed.
+    Wayland ignores setPosition (compositor-owned) — the pill simply grows
+    rightward there; acceptable ceiling. */
+async function resizeOverlay(width: number): Promise<void> {
+  const win = getCurrentWindow();
+  try {
+    const [pos, inner, scale] = [await win.outerPosition(), await win.innerSize(), await win.scaleFactor()];
+    await win.setSize(new LogicalSize(width, OVERLAY_H));
+    const dx = Math.round((width * scale - inner.width) / MIRROR_FACTOR);
+    if (dx !== ZERO) { await win.setPosition(new PhysicalPosition(pos.x - dx, pos.y)); }
+  } catch {
+    // Non-fatal: pill falls back to in-window ellipsis.
+  }
+}
+/** Widen the pill and window so an error message fits (clamped). */
+function fitErrorText(): void {
+  indicator.style.width = "max-content";
+  const measured = indicator.offsetWidth;
+  const width = Math.min(Math.max(measured, MIN_PILL_W), MAX_ERROR_W);
+  indicator.style.width = `${width}px`;
+  if (width > OVERLAY_W - WINDOW_PADDING) {
+    overlayWidened = true;
+    void resizeOverlay(width + WINDOW_PADDING);
+  }
+}
+function resetPillSize(): void {
+  indicator.style.width = "";
+  if (overlayWidened) {
+    overlayWidened = false;
+    void resizeOverlay(OVERLAY_W);
+  }
+}
+function showRecording(elapsedSeconds = ZERO): void {
+  indicator.classList.remove("is-loading", "is-error", "is-correcting");
+  resetPillSize();
   recordingState.hidden = false;
   errorState.hidden = true;
   start(elapsedSeconds);
   startVisualizer();
 }
-
-function showError(): void {
+function showError(label = "Ошибка — подробности в главном окне"): void {
+  errorState.setAttribute("aria-label", label);
+  errorLabel.textContent = label;
   stop();
   recordingState.hidden = true;
   errorState.hidden = false;
-  indicator.classList.remove("is-loading");
+  indicator.classList.remove("is-loading", "is-correcting");
   indicator.classList.add("is-error");
+  fitErrorText();
   resetVoiceLevel();
 }
-
-function applyStatus(payload: RuntimeStatus): void {
-  if (payload.kind === "recording") {
-    showRecording(payload.elapsedSeconds ?? 0);
+function showProcessing(kind: "transcribing" | "correcting"): void {
+  stop();
+  resetVoiceLevel();
+  recordingState.hidden = true;
+  errorState.hidden = true;
+  indicator.classList.remove("is-loading", "is-error");
+  indicator.classList.toggle("is-correcting", kind === "correcting");
+  resetPillSize();
+  processingLabel.textContent = { correcting: "Корректирую…", transcribing: "Распознаю…" }[kind];
+  processingState.hidden = false;
+}
+function showIdle(): void {
+  stop();
+  resetVoiceLevel();
+  recordingState.hidden = true;
+  errorState.hidden = true;
+  indicator.classList.add("is-loading");
+  indicator.classList.remove("is-error", "is-correcting");
+  resetPillSize();
+}
+function resultLabel(payload: Readonly<RuntimeStatus>): string {
+  let label = "Текст вставлен";
+  if (payload.kind === "copied") { label = "Скопировано — вставьте вручную"; }
+  if ((payload.correctionWarning ?? "") !== "") { label += " · Без корректировки"; }
+  return label;
+}
+function showResult(payload: Readonly<RuntimeStatus>): void {
+  showIdle();
+  indicator.classList.remove("is-loading");
+  indicator.classList.add("is-result");
+  processingState.hidden = false;
+  processingLabel.textContent = resultLabel(payload);
+  fitErrorText();
+}
+function applyStatus(payload: Readonly<RuntimeStatus>): void {
+  processingState.hidden = true;
+  indicator.classList.remove("is-result");
+  if (payload.kind === "recording") { showRecording(payload.elapsedSeconds ?? ZERO); } else if (payload.kind === "transcribing" || payload.kind === "correcting") {
+    showProcessing(payload.kind);
   } else if (payload.kind === "error") {
     showError();
+  } else if (payload.kind === "inserted" || payload.kind === "copied") {
+    showResult(payload);
   } else {
-    stop();
-    resetVoiceLevel();
+    showIdle();
   }
 }
-
-void listen<AudioLevelPayload>("slovo://audio-level", ({ payload }) => {
-  const level =
-    payload && typeof payload === "object" && "level" in payload
-      ? typeof payload.level === "number"
-        ? payload.level
-        : 0
-      : 0;
-  pushVoiceLevel(level);
-});
-
-let receivedLiveStatus = false;
-
-void listen<RuntimeStatus>("slovo://status", ({ payload }) => {
-  receivedLiveStatus = true;
+const lifecycle = { cancelled: false, revision: -1 };
+const disposers: (() => void)[] = [];
+function retainListener(dispose: () => void): void {
+  if (lifecycle.cancelled) { dispose(); } else { disposers.push(dispose); }
+}
+function acceptStatus(payload: Readonly<RuntimeStatus>): void {
+  if (lifecycle.cancelled || payload.revision <= lifecycle.revision) { return; }
+  lifecycle.revision = payload.revision;
   applyStatus(payload);
-});
-
-void invoke<RuntimeStatus>("get_status")
-  .then((payload) => {
-    if (!receivedLiveStatus) applyStatus(payload);
-  })
-  .catch(() => {
-    if (!receivedLiveStatus) showRecording();
-  });
+}
+async function subscribeAudio(): Promise<void> {
+  try {
+    retainListener(await listen<unknown>("slovo://audio-level", (event: { readonly payload: unknown }) => {
+  if (lifecycle.cancelled) { return; }
+  const { payload } = event;
+  let level = ZERO;
+  if (payload !== null && typeof payload === "object" && "level" in payload && typeof payload.level === "number") {
+    ({ level } = payload);
+  }
+  pushVoiceLevel(level);
+}));
+  } catch {
+    // Status remains available without audio levels.
+  }
+}
+void subscribeAudio();
+async function loadInitialStatus(): Promise<void> {
+  try {
+    retainListener(await listen<Readonly<RuntimeStatus>>("slovo://status", (event: { readonly payload: Readonly<RuntimeStatus> }) => { acceptStatus(event.payload); }));
+    if (lifecycle.cancelled) { return; }
+    acceptStatus(await invoke<RuntimeStatus>("get_status"));
+  } catch {
+    if (!lifecycle.cancelled && lifecycle.revision < ZERO) { showError("Не удалось синхронизировать состояние"); }
+  }
+}
+globalThis.addEventListener("pagehide", () => {
+  lifecycle.cancelled = true;
+  for (const dispose of disposers) { dispose(); }
+  stop();
+}, { once: true });
+showIdle();
+void loadInitialStatus();

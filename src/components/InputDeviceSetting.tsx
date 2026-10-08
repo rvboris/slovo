@@ -1,4 +1,3 @@
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -6,13 +5,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import type { JSX } from "react";
+import { Label } from "@/components/ui/label";
 
 interface InputDeviceSettingProps {
-  value: string | null;
-  options: { value: string; label: string }[];
-  isLoading: boolean;
-  onLoad: () => void;
-  onChange: (value: string | null) => void;
+  readonly value: string | null;
+  readonly options: readonly { readonly value: string; readonly label: string }[];
+  readonly isLoading: boolean;
+  readonly onLoad: () => void;
+  readonly onChange: (value: string | null) => void;
 }
 
 export function InputDeviceSetting({
@@ -21,14 +22,15 @@ export function InputDeviceSetting({
   isLoading,
   onLoad,
   onChange,
-}: InputDeviceSettingProps) {
-  const selectValue = value === null ? "__default__" : value;
+}: InputDeviceSettingProps) : JSX.Element | null {
+  const selectValue = value ?? "__default__";
   const visibleOptions = options.filter(
-    (option) => option.value.trim() && option.label.trim(),
+    (option) => option.value.trim() !== "" && option.label.trim() !== "",
   );
 
-  const handleChange = (v: string) => {
-    onChange(v === "__default__" ? null : v);
+  const handleChange = (next: string): void => {
+    if (next === "__default__") { onChange(null); }
+    else { onChange(next); }
   };
 
   return (
@@ -38,7 +40,7 @@ export function InputDeviceSetting({
         value={selectValue}
         onValueChange={handleChange}
         onOpenChange={(open) => {
-          if (open) onLoad();
+          if (open) {onLoad();}
         }}
       >
         <SelectTrigger id="input-device">
@@ -51,12 +53,9 @@ export function InputDeviceSetting({
             </SelectItem>
           ))}
           {isLoading && (
-            <div
-              className="px-2 py-1.5 text-sm text-muted-foreground"
-              role="status"
-            >
+            <output className="block px-2 py-1.5 text-sm text-muted-foreground">
               Загрузка устройств…
-            </div>
+            </output>
           )}
         </SelectContent>
       </Select>

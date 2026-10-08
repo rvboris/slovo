@@ -354,6 +354,117 @@ fn emit<W: Write>(output: &mut W, message: &HelperMessage) -> Result<(), String>
         .map_err(|error| format!("cannot write protocol output: {error}"))
 }
 
+#[cfg(test)]
+mod protocol_tests {
+    use super::*;
+    use std::io;
+
+    struct FailingWriter {
+        fail_write: bool,
+        fail_flush: bool,
+    }
+
+    impl Write for FailingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            if self.fail_write {
+                Err(io::Error::other("write failed"))
+            } else {
+                Ok(buf.len())
+            }
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            if self.fail_flush {
+                Err(io::Error::other("flush failed"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn safe_protocol_errors_do_not_expose_parser_details() {
+        let Err(ProtocolError::Malformed(malformed)) = decode_parent_line(b"{not-json\n") else {
+            panic!("expected malformed protocol error")
+        };
+        assert_eq!(
+            safe_protocol_error(&ProtocolError::Malformed(malformed)),
+            "protocol command is malformed"
+        );
+        assert_eq!(
+            safe_protocol_error(&ProtocolError::UnsupportedVersion(99)),
+            "unsupported protocol version"
+        );
+        assert_eq!(
+            safe_protocol_error(&ProtocolError::Oversized { size: 9, max: 8 }),
+            "protocol line is oversized"
+        );
+    }
+
+    #[test]
+    fn emit_propagates_write_and_flush_errors() {
+        let message = HelperMessage::Devices { device_count: 0 };
+        let mut write = FailingWriter {
+            fail_write: true,
+            fail_flush: false,
+        };
+        assert!(emit(&mut write, &message)
+            .unwrap_err()
+            .contains("write failed"));
+        let mut flush = FailingWriter {
+            fail_write: false,
+            fail_flush: true,
+        };
+        assert!(emit(&mut flush, &message)
+            .unwrap_err()
+            .contains("flush failed"));
+    }
+
+    #[test]
+    fn event_reply_sequences_are_monotonic_and_start_at_one() {
+        let mut state = CommandState::new("test".into());
+        let mut output = Vec::new();
+        state
+            .emit_event(
+                MatchEvent {
+                    generation: 7,
+                    state: MatchState::Pressed,
+                },
+                &mut output,
+            )
+            .unwrap();
+        state
+            .emit_event(
+                MatchEvent {
+                    generation: 7,
+                    state: MatchState::Released,
+                },
+                &mut output,
+            )
+            .unwrap();
+        let messages: Vec<HelperMessage> = output
+            .split_inclusive(|byte| *byte == b'\n')
+            .map(|line| slovo_shortcut_core::protocol::decode_helper_line(line).unwrap())
+            .collect();
+        assert!(matches!(
+            messages[0],
+            HelperMessage::Event {
+                seq: 1,
+                state: EventState::Pressed,
+                ..
+            }
+        ));
+        assert!(matches!(
+            messages[1],
+            HelperMessage::Event {
+                seq: 2,
+                state: EventState::Released,
+                ..
+            }
+        ));
+    }
+}
+
 fn summary_error(summary: &ScanSummary) -> (&'static str, &'static str) {
     if summary.permission_denied > 0 {
         ("permission-denied", "keyboard devices are not readable")

@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "correction-close",
+  "description": "Allow confirmed closing of the correction window only",
+  "windows": ["correction-settings"],
+  "permissions": ["core:window:allow-destroy"]
+}

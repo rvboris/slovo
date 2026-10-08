@@ -46,6 +46,19 @@ mod tests {
     use super::*;
 
     #[test]
+    fn forced_idle_allows_restart_after_every_trigger_mode() {
+        for kind in [TriggerType::Toggle, TriggerType::Hold, TriggerType::AutoVad] {
+            let mut state = TriggerState::default();
+            assert_eq!(state.release(kind), Action::None);
+            assert_eq!(state.press(kind), Action::Start);
+            state.force_idle();
+            state.force_idle();
+            assert_eq!(state.release(kind), Action::None);
+            assert_eq!(state.press(kind), Action::Start);
+        }
+    }
+
+    #[test]
     fn toggle_alternates() {
         let mut state = TriggerState::default();
         assert_eq!(state.press(TriggerType::Toggle), Action::Start);

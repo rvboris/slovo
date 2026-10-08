@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "645471c0-fdee-4d4f-b848-21069aa5950a",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/home/boris/mygit/slovo/.archify/architecture-slovo-20261005-231527/candidate-review2.json",
+  "output": "/home/boris/mygit/slovo/.archify/architecture-slovo-20261005-231527/slovo.html",
+  "specification": {
+    "sha256": "58a1e355e071e0565d2c616f4ead3c0c83bb3ed195f33e1f7628a5fca64dd5a4",
+    "bytes": 6641
+  },
+  "artifact": {
+    "sha256": "44a01f4f11c39d689ce68630f76eaf74a92a99b9d1246f848e643e1cbc1cb931",
+    "bytes": 778883
+  }
+}

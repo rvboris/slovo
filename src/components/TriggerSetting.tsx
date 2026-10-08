@@ -1,26 +1,32 @@
-import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { type TriggerType, triggerDescriptions } from "@/lib/types";
+import type { JSX } from "react";
+import { Label } from "@/components/ui/label";
+import type { TriggerType } from '@/lib/types';
 import { cn } from "@/lib/utils";
+import { triggerDescriptions } from '@/lib/types';
 
 interface TriggerSettingProps {
-  value: TriggerType;
-  onChange: (value: TriggerType) => void;
+  readonly value: TriggerType;
+  readonly onChange: (value: TriggerType) => void;
 }
 
-const options: { value: TriggerType; label: string }[] = [
-  { value: "toggle", label: "Перекл." },
-  { value: "hold", label: "Удержание" },
-  { value: "auto-vad", label: "Авто-VAD" },
+const options: readonly { readonly value: TriggerType; readonly label: string }[] = [
+  { label: "Перекл.", value: "toggle" },
+  { label: "Удержание", value: "hold" },
+  { label: "Авто-VAD", value: "auto-vad" },
 ];
 
-export function TriggerSetting({ value, onChange }: TriggerSettingProps) {
+export function TriggerSetting({ value, onChange }: TriggerSettingProps) : JSX.Element | null {
+  let description = triggerDescriptions[value];
+  if (value === "auto-vad") { description = "Нажмите сочетание, чтобы начать. Запись остановится после паузы в речи."; }
   return (
     <div className="space-y-2">
       <Label>Запуск записи</Label>
       <RadioGroup
         value={value}
-        onValueChange={(v) => onChange(v as TriggerType)}
+        onValueChange={(next) => {
+          if (next === "toggle" || next === "hold" || next === "auto-vad") { onChange(next); }
+        }}
         className="grid grid-cols-3 gap-1 rounded-xl bg-muted p-1"
         aria-label="Тип срабатывания"
       >
@@ -30,10 +36,9 @@ export function TriggerSetting({ value, onChange }: TriggerSettingProps) {
             <label
               key={opt.value}
               className={cn(
-                "relative flex items-center justify-center rounded-lg px-3 py-2 text-sm font-bold cursor-pointer transition-all duration-200",
-                active
-                  ? "bg-[var(--accent-vivid)] text-white shadow-[0_4px_14px_oklch(0.55_0.22_280/0.4)]"
-                  : "text-muted-foreground hover:text-foreground hover:bg-background/60",
+                "relative flex items-center justify-center rounded-lg px-3 py-2 text-sm font-bold cursor-pointer transition-all duration-200 focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-ring",
+                active && "bg-[var(--mode-selected)] text-white shadow-[0_4px_14px_oklch(0.55_0.22_280/0.4)]",
+                !active && "text-muted-foreground hover:text-foreground hover:bg-background/60",
               )}
             >
               <RadioGroupItem
@@ -47,7 +52,7 @@ export function TriggerSetting({ value, onChange }: TriggerSettingProps) {
         })}
       </RadioGroup>
       <p className="text-xs text-muted-foreground">
-        {triggerDescriptions[value]}
+        {description} До 2 минут за запись.
       </p>
     </div>
   );

@@ -9,6 +9,25 @@ permissions:
   contents: read
 
 jobs:
+  frontend:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run check:compiler
+      - run: npm run build
+      - run: npm run test:coverage
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: typescript-coverage
+          path: coverage/ts
+
   rustfmt:
     runs-on: ubuntu-22.04
     steps:
@@ -27,7 +46,14 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libglib2.0-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev libasound2-dev libxcb-randr0-dev libxcb-shape0-dev libxcb-xfixes0-dev libx11-dev libxdo-dev libxkbcommon-dev libudev-dev
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, llvm-tools-preview
       - run: node scripts/build-helper.js --debug
       - run: cargo clippy --workspace --all-targets -- -D warnings
         working-directory: src-tauri
+      - run: cargo install cargo-llvm-cov --version 0.9.1 --locked
+      - run: sh scripts/coverage-rust.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rust-coverage
+          path: coverage/rust

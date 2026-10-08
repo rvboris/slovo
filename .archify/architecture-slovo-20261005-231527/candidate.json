@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Slovo — Push-to-Talk Voice Transcription",
+    "subtitle": "Tauri 2 desktop app: global hotkey → record → transcribe → type into the active window (Linux, Wayland/X11)",
+    "output": ".archify/architecture-slovo-20261005-231527/slovo.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "user", "type": "external", "label": "User", "sublabel": "presses global hotkey", "pos": [40, 430], "size": [140, 70] },
+    { "id": "helper", "type": "external", "label": "slovo-input-helper", "sublabel": "evdev sidecar · udev rule", "pos": [40, 290], "size": [160, 80], "tag": "Wayland" },
+    { "id": "main-ui", "type": "frontend", "label": "Main Window", "sublabel": "React 19 · settings UI", "pos": [280, 300], "size": [160, 70] },
+    { "id": "overlay", "type": "frontend", "label": "Recording Overlay", "sublabel": "recording.html", "pos": [280, 570], "size": [160, 70] },
+    { "id": "correction", "type": "frontend", "label": "Correction Window", "sublabel": "edit before insert", "pos": [280, 435], "size": [160, 70] },
+    { "id": "shortcut", "type": "backend", "label": "Shortcut Backend", "sublabel": "native (X11) · Wayland events", "pos": [560, 250], "size": [170, 70] },
+    { "id": "commands", "type": "backend", "label": "IPC Commands", "sublabel": "Tauri invoke handlers", "pos": [560, 120], "size": [170, 70] },
+    { "id": "settings", "type": "database", "label": "Settings Store", "sublabel": "persisted config", "pos": [830, 120], "size": [160, 70] },
+    { "id": "hotkey", "type": "backend", "label": "Hotkey Controller", "sublabel": "toggle / hold / VAD trigger", "pos": [560, 390], "size": [170, 80] },
+    { "id": "audio", "type": "backend", "label": "Audio Recorder", "sublabel": "input device capture", "pos": [560, 560], "size": [170, 70] },
+    { "id": "transcription", "type": "backend", "label": "Transcription Client", "sublabel": "reqwest multipart", "pos": [560, 720], "size": [170, 70] },
+    { "id": "whisper", "type": "cloud", "label": "Whisper Server", "sublabel": "/v1/audio/transcriptions", "pos": [830, 720], "size": [170, 80], "tag": "OpenAI-compatible · loopback-only" },
+    { "id": "output", "type": "backend", "label": "Text Output", "sublabel": "insert into active window", "pos": [830, 560], "size": [160, 70] },
+    { "id": "tools", "type": "external", "label": "System Tools", "sublabel": "wl-copy · ydotool / enigo", "pos": [1160, 560], "size": [170, 70] },
+    { "id": "active-window", "type": "external", "label": "Active Window", "sublabel": "any focused app", "pos": [1090, 420], "size": [160, 70] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Slovo Desktop App — Tauri 2 (WebView + Rust)", "wraps": ["main-ui", "overlay", "correction", "commands", "settings", "shortcut", "hotkey", "audio", "transcription", "output"] },
+    { "kind": "region", "label": "Linux OS (Wayland / X11)", "wraps": ["helper", "tools", "active-window"] }
+  ],
+  "connections": [
+    { "id": "helper-shortcut", "from": "helper", "to": "shortcut", "label": "raw evdev events" },
+    { "id": "shortcut-hotkey", "from": "shortcut", "to": "hotkey", "label": "start / stop" },
+    { "id": "hotkey-audio", "from": "hotkey", "to": "audio", "label": "begin / end capture" },
+    { "id": "audio-transcription", "from": "audio", "to": "transcription", "label": "audio bytes" },
+    { "id": "transcription-whisper", "from": "transcription", "to": "whisper", "label": "HTTP multipart POST" },
+    { "id": "whisper-transcription", "from": "whisper", "to": "transcription", "label": "transcript JSON", "variant": "dashed" },
+    { "id": "transcription-hotkey", "from": "transcription", "to": "hotkey", "label": "result", "variant": "dashed" },
+    { "id": "hotkey-correction", "from": "hotkey", "to": "correction", "label": "transcript event" },
+    { "id": "hotkey-overlay", "from": "hotkey", "to": "overlay", "label": "status event", "variant": "dashed" },
+    { "id": "correction-output", "from": "correction", "to": "output", "label": "confirmed text" },
+    { "id": "output-tools", "from": "output", "to": "tools", "label": "clipboard + keys" },
+    { "id": "tools-window", "from": "tools", "to": "active-window", "label": "types text" },
+    { "id": "ui-commands", "from": "main-ui", "to": "commands", "label": "invoke IPC" },
+    { "id": "commands-settings", "from": "commands", "to": "settings", "label": "read / write" },
+    { "id": "settings-hotkey", "from": "settings", "to": "hotkey", "label": "trigger mode", "variant": "dashed" },
+    { "id": "user-ui", "from": "user", "to": "main-ui", "label": "configures" }
+  ]
+}

@@ -1,0 +1,233 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "unicorn", "import", "jsx-a11y", "promise", "node", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error",
+    "perf": "error",
+    "style": "error",
+    "restriction": "error",
+    "nursery": "error"
+  },
+  "ignorePatterns": ["**/target/**", "**/dist/**", "**/node_modules/**", "**/.slim/**"],
+  "rules": {
+    // Automatic JSX runtime; TSX is the authored JSX format.
+    "react/react-in-jsx-scope": "off",
+    "react/jsx-filename-extension": ["error", { "extensions": [".tsx"] }],
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    // Named exports by default; Vite's configuration is the sole default-export exception.
+    "import/no-named-export": "off",
+    "import/prefer-default-export": "off",
+    "import/no-default-export": "error",
+    // Prefer await and permit modern ES2020 syntax.
+    "oxc/no-async-await": "off",
+    "oxc/no-optional-chaining": "off",
+    "oxc/no-rest-spread-properties": "off",
+    "no-undefined": "off",
+    // Explicit branches are required by no-ternary; do not demand the opposite rewrite.
+    "unicorn/prefer-ternary": "off",
+    // The embedded React compiler does not support finally; retain other compiler checks.
+    "react/todo": "off",
+    "one-var": ["error", "never"],
+    "func-style": ["error", "declaration", { "allowArrowFunctions": true }],
+    "react/function-component-definition": ["error", {
+      "namedComponents": "function-declaration",
+      "unnamedComponents": "arrow-function"
+    }],
+    "import/consistent-type-specifier-style": ["error", "prefer-top-level"],
+    "typescript/consistent-type-imports": ["error", {
+      "prefer": "type-imports",
+      "fixStyle": "separate-type-imports"
+    }],
+    // Separate type imports are required above, not duplicate runtime imports.
+    "no-duplicate-imports": ["error", { "allowSeparateTypeImports": true }],
+    "no-void": ["error", { "allowAsStatement": true }],
+    "react/only-export-components": ["error", { "allowConstantExport": true }],
+    "react/forbid-component-props": ["error", { "forbid": ["style"] }]
+  },
+  "overrides": [
+    {
+      "files": ["vitest.config.ts"],
+      "env": { "node": true, "browser": false },
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": ["tests/**/*.{ts,tsx}"],
+      "env": { "browser": true, "node": true },
+      // Test scenarios use literal fixtures, mutable mocks and descriptive assertions; production rules stay strict.
+      "rules": {
+        "no-undef": "off",
+        "no-magic-numbers": "off",
+        "import/no-relative-parent-imports": "off",
+        "max-statements": "off",
+        "max-lines-per-function": "off",
+        "typescript/prefer-readonly-parameter-types": "off",
+        "react/only-export-components": "off",
+        "react/jsx-no-literals": "off",
+        "react/jsx-filename-extension": ["error", { "extensions": [".tsx"] }],
+        "import/no-nodejs-modules": "off",
+        "import/no-unassigned-import": ["error", { "allow": ["@testing-library/jest-dom/vitest", "**/*.css"] }]
+      }
+    },
+    {
+      "files": ["tests/components/**/*.ts", "tests/components/**/*.tsx", "tests/app/**/*.ts", "tests/app/**/*.tsx"],
+      "rules": {
+        "unicorn/no-null": "off"
+      }
+    },
+    {
+      "files": ["tests/components/helpers.ts", "tests/app/app.test.tsx", "tests/app/correction-window.test.tsx"],
+      "rules": {
+        "init-declarations": "off"
+      }
+    },
+    {
+      "files": ["tests/components/settings.test.tsx"],
+      "rules": { "react/jsx-props-no-spreading": "off" }
+    },
+    {
+      "files": ["tests/components/ui.test.tsx"],
+      "rules": { "react/jsx-max-depth": "off", "import/max-dependencies": "off" }
+    },
+    {
+      "files": ["tests/app/app.test.tsx", "tests/app/correction-window.test.tsx", "tests/app/recording.test.ts"],
+      "rules": { "promise/prefer-await-to-callbacks": "off" }
+    },
+    {
+      "files": ["tests/hooks/**/*.ts", "tests/lib/**/*.ts"],
+      "rules": {
+        "unicorn/no-null": "off",
+        "init-declarations": "off"
+      }
+    },
+    {
+      "files": ["tests/hooks/harness.ts"],
+      "rules": {
+        "promise/avoid-new": "off"
+      }
+    },
+    {
+      "files": ["src/hooks/usePermissionSetup.ts"],
+      // Retain only the legacy copy fallback when the Clipboard API is unavailable.
+      "rules": { "typescript/no-deprecated": ["error", {
+        "allow": [{ "from": "lib", "name": "execCommand" }]
+      }] }
+    },
+    {
+      "files": ["src/hooks/**/*.ts"],
+      // Framework-owned updater handles and event envelopes retain their library contracts.
+      "rules": { "typescript/prefer-readonly-parameter-types": ["error", {
+        "allow": [
+          { "from": "package", "package": "react", "name": ["Dispatch", "SetStateAction", "RefObject"] },
+          { "from": "package", "package": "@tauri-apps/api", "name": "Event" }
+        ]
+      }] }
+    },
+    {
+      "files": ["src/lib/utils.ts"],
+      // clsx ClassValue recursively includes mutable library arrays/dictionaries; callers still use readonly inputs.
+      "rules": { "typescript/prefer-readonly-parameter-types": "off" }
+    },
+    {
+      "files": ["src/recording.ts"],
+      // Nonblocking IPC initialization deliberately avoids blocking module evaluation and preserves ES2020 build compatibility.
+      "rules": { "unicorn/prefer-top-level-await": "off" }
+    },
+    {
+      "files": ["src/**/*.tsx"],
+      // Keep layout readable without splitting every nested control into a component.
+      "rules": {
+        "react/jsx-max-depth": ["error", { "max": 5 }],
+        "max-lines-per-function": ["error", { "max": 100, "skipBlankLines": true, "skipComments": true }],
+        "max-statements": ["error", { "max": 20 }],
+        "typescript/prefer-readonly-parameter-types": ["error", {
+          "ignoreInferredTypes": false,
+          "treatMethodsAsReadonly": false,
+          "checkParameterProperties": true,
+          "allow": [
+            { "from": "package", "package": "react", "name": ["ForwardedRef", "RefObject", "ReactElement", "ChangeEvent", "FormEvent"] },
+            { "from": "package", "package": "@tauri-apps/api", "name": "CloseRequestedEvent" }
+          ]
+        }]
+      }
+    },
+    {
+      "files": ["src/App.tsx"],
+      // The application composes the existing settings controls and hooks.
+      "rules": { "import/max-dependencies": ["error", { "max": 20, "ignoreTypeImports": true }] }
+    },
+    {
+      "files": ["src/CorrectionWindow.tsx"],
+      // The correction window composes its form, notices and lifecycle hooks.
+      "rules": { "import/max-dependencies": ["error", { "max": 12, "ignoreTypeImports": true }] }
+    },
+    // Only transparent primitive wrappers may forward their native props.
+    { "files": ["src/components/ui/input.tsx"], "rules": { "react/jsx-props-no-spreading": ["error", { "exceptions": ["input"] }] } },
+    { "files": ["src/components/ui/button.tsx"], "rules": { "react/jsx-props-no-spreading": ["error", { "exceptions": ["Comp"] }] } },
+    { "files": ["src/components/ui/badge.tsx"], "rules": { "react/jsx-props-no-spreading": ["error", { "exceptions": ["div"] }] } },
+    { "files": ["src/components/ui/label.tsx"], "rules": { "react/jsx-props-no-spreading": ["error", { "exceptions": ["LabelPrimitive.Root"] }] } },
+    { "files": ["src/components/ui/radio-group.tsx"], "rules": {
+      "react/jsx-props-no-spreading": ["error", { "exceptions": ["RadioGroupPrimitive.Root", "RadioGroupPrimitive.Item"] }],
+      "react/no-multi-comp": ["error", { "ignoreStateless": true }]
+    } },
+    { "files": ["src/components/ui/select.tsx"], "rules": {
+      "react/jsx-props-no-spreading": ["error", { "exceptions": ["SelectPrimitive.Trigger", "SelectPrimitive.ScrollUpButton", "SelectPrimitive.ScrollDownButton", "SelectPrimitive.Content", "SelectPrimitive.Label", "SelectPrimitive.Item", "SelectPrimitive.Separator"] }],
+      "react/no-multi-comp": ["error", { "ignoreStateless": true }]
+    } },
+    {
+      "files": ["src/**"],
+      "env": { "browser": true, "node": false },
+      // Rust JSON contracts and React refs use null.
+      "rules": { "unicorn/no-null": "off" }
+    },
+    {
+      "files": ["src/**/*.ts", "src/**/*.tsx"],
+      // TypeScript checks unresolved identifiers in the source project.
+      "rules": { "no-undef": "off" }
+    },
+    {
+      "files": ["scripts/**", "vite.config.ts"],
+      "env": { "node": true, "browser": false },
+      "rules": {
+        "import/no-nodejs-modules": "off",
+        "node/no-process-env": "off"
+      }
+    },
+    {
+      "files": ["vite.config.ts"],
+      "rules": { "import/no-default-export": "off" }
+    },
+    {
+      "files": ["src/components/**/*.tsx", "src/*.tsx"],
+      "rules": {
+        "unicorn/filename-case": ["error", {
+          "cases": { "pascalCase": true, "kebabCase": true }
+        }]
+      }
+    },
+    {
+      "files": ["src/hooks/**/*.ts"],
+      "rules": { "unicorn/filename-case": ["error", { "case": "camelCase" }] }
+    },
+    {
+      "files": ["src/**/*.tsx"],
+      // No i18n layer: authored UI text remains literal.
+      "rules": { "react/jsx-no-literals": "off" }
+    },
+    {
+      "files": ["scripts/build-helper.js"],
+      // Sequential CLI parsing permits twenty statements and a unit index step.
+      "rules": {
+        "node/no-sync": "off",
+        "max-statements": ["error", { "max": 20 }],
+        "no-magic-numbers": ["error", { "ignore": [1] }]
+      }
+    },
+    {
+      "files": ["src/components/ui/input.tsx", "src/components/ui/button.tsx", "src/components/ui/label.tsx", "src/components/ui/select.tsx", "src/components/ui/radio-group.tsx", "src/components/ui/badge.tsx"],
+      // Third-party nested HTML/style/ReactNode contracts are mutable; retain shallow readonly wrapper props.
+      "rules": { "typescript/prefer-readonly-parameter-types": "off" }
+    }
+  ]
+}

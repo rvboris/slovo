@@ -13,6 +13,7 @@
         class="indicator-state recording-state"
         role="status"
         aria-label="Идёт запись"
+        hidden
       >
         <canvas id="voice-canvas" class="voice-canvas" aria-hidden="true"></canvas>
         <div class="scrim" aria-hidden="true"></div>
@@ -20,6 +21,10 @@
           <span class="recording-dot" aria-hidden="true"></span>
           <time id="recording-time" datetime="PT0S">00:00</time>
         </div>
+      </div>
+      <div id="processing-state" class="indicator-state processing-state" role="status" aria-live="polite" aria-atomic="true" hidden>
+        <span class="processing-spinner" aria-hidden="true"></span>
+        <span id="processing-label"></span>
       </div>
       <div
         id="error-state"
@@ -31,6 +36,7 @@
         hidden
       >
         <span class="error-mark" aria-hidden="true">!</span>
+        <span id="error-label" class="error-message"></span>
       </div>
     </main>
     <script type="module" src="/src/recording.ts"></script>

@@ -13,7 +13,7 @@ use num_traits::ToPrimitive;
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::{
     AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, Position, Size, WebviewWindow,
     WebviewWindowBuilder,
@@ -46,13 +46,15 @@ pub(crate) struct ShortcutRuntime {
 ///
 /// # Lock order
 ///
-/// When multiple locks must be held simultaneously, acquire them in the order
-/// they appear here to avoid deadlocks:
-///   1. `settings`   (`SettingsRuntime`)
-///   2. `shortcut`   (`ShortcutRuntime`)
-///   3. `trigger`
-///   4. `recording`
-///   5. `status`
+/// When multiple locks must be held simultaneously, acquire them in this order:
+///   1. `SETTINGS_SAVE` (commands module)
+///   2. `processing`
+///   3. short `settings` / `recording` snapshots
+///   4. `shortcut`, `trigger`, `status` only when their operation permits it
+///
+/// Never hold `processing` across `ShortcutManager::replace`: the Wayland
+/// helper may synchronously dispatch a release while replacement waits for ACK.
+/// Never hold `settings` while waiting for `processing`.
 ///
 /// `shortcut_operations` is a plain `Mutex<()>` used purely as a serialization
 /// primitive. Initialization, retry, replace, and shutdown manager mutations
@@ -65,7 +67,9 @@ pub struct AppState {
     pub(crate) trigger: Mutex<TriggerState>,
     pub(crate) audio: AudioController,
     pub(crate) recording: Mutex<Option<Instant>>,
-    /// Non-zero while a server check is pending; newer starts replace the token.
+    // Serializes start/stop transitions; true blocks new jobs until output completes.
+    pub(crate) processing: Mutex<bool>,
+    /// Odd while a server check/start is pending; even otherwise.
     pub(crate) recording_start_token: AtomicU64,
     pub(crate) shortcut: Mutex<ShortcutRuntime>,
     pub(crate) shortcut_operations: Mutex<()>,
@@ -74,10 +78,67 @@ pub struct AppState {
     /// A token prevents a delayed end command from disabling a newer capture.
     hotkey_capture: std::sync::atomic::AtomicU64,
     pub(crate) status: Mutex<StatusEvent>,
+    status_revision: AtomicU64,
+}
+
+pub(crate) struct ProcessingReservation<'a> {
+    processing: &'a Mutex<bool>,
+}
+
+impl Drop for ProcessingReservation<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut processing) = self.processing.lock() { *processing = false; }
+    }
 }
 
 impl AppState {
-    pub(crate) fn set_hotkey_capture(&self, active: bool, token: u64) {
+    pub(crate) fn reserve_idle_processing(&self) -> Result<ProcessingReservation<'_>, String> {
+        let mut processing = self.processing.lock().map_err(|_| "processing lock poisoned")?;
+        let recording = self.recording.lock().map_err(|_| "recording lock poisoned")?;
+        if *processing || recording.is_some() || self.recording_start_token.load(Ordering::Acquire) & 1 == 1 {
+            return Err("Cannot change the hotkey while recording or processing is active.".to_owned());
+        }
+        *processing = true;
+        drop(recording);
+        drop(processing);
+        Ok(ProcessingReservation { processing: &self.processing })
+    }
+
+    pub(crate) fn set_hotkey_capture(&self, active: bool, token: u64) -> Result<(), String> {
+        if !active {
+            self.update_hotkey_capture(active, token);
+            return Ok(());
+        }
+
+        let processing = self.processing.lock().map_err(|_| "processing lock poisoned")?;
+        let mut current = self.hotkey_capture.load(Ordering::Acquire);
+        let result = loop {
+            if token < (current >> 1) { break Ok(()); }
+            if *processing {
+                break Err("Cannot capture a hotkey while processing is active.".to_owned());
+            }
+            if self.recording.lock().map_err(|_| "recording lock poisoned")?.is_some() {
+                break Err("Cannot capture a hotkey while recording is active.".to_owned());
+            }
+            if self.recording_start_token.load(Ordering::Acquire) & 1 == 1 {
+                break Err("Cannot capture a hotkey while recording is starting.".to_owned());
+            }
+            let next = (token << 1) | 1;
+            match self.hotkey_capture.compare_exchange_weak(
+                current,
+                next,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => break Ok(()),
+                Err(observed) => current = observed,
+            }
+        };
+        drop(processing);
+        result
+    }
+
+    fn update_hotkey_capture(&self, active: bool, token: u64) {
         let next = (token << 1) | u64::from(active);
         let mut current = self.hotkey_capture.load(Ordering::Acquire);
         while token >= (current >> 1) {
@@ -153,6 +214,7 @@ impl AppState {
             trigger: Mutex::new(TriggerState::default()),
             audio: AudioController::new(),
             recording: Mutex::new(None),
+            processing: Mutex::new(false),
             recording_start_token: AtomicU64::new(0),
             shortcut: Mutex::new(ShortcutRuntime {
                 manager: shortcut_manager,
@@ -162,9 +224,12 @@ impl AppState {
             shortcut_operations: Mutex::new(()),
             shortcut_stopping: AtomicBool::new(false),
             hotkey_capture: std::sync::atomic::AtomicU64::new(0),
+            status_revision: AtomicU64::new(0),
             status: Mutex::new(StatusEvent {
                 kind: StatusKind::Ready,
+                revision: 0,
                 message: None,
+                correction_warning: None,
                 elapsed_seconds: None,
             }),
         }
@@ -177,6 +242,7 @@ pub(crate) enum StatusKind {
     Ready,
     Recording,
     Transcribing,
+    Correcting,
     Error,
     Copied,
     Inserted,
@@ -185,8 +251,11 @@ pub(crate) enum StatusKind {
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct StatusEvent {
     pub(crate) kind: StatusKind,
+    pub(crate) revision: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) message: Option<String>,
+    #[serde(rename = "correctionWarning", skip_serializing_if = "Option::is_none")]
+    pub(crate) correction_warning: Option<String>,
     #[serde(rename = "elapsedSeconds", skip_serializing_if = "Option::is_none")]
     pub(crate) elapsed_seconds: Option<u64>,
 }
@@ -196,50 +265,105 @@ pub(crate) fn emit_status(app: &AppHandle, kind: StatusKind, message: Option<Str
         app,
         StatusEvent {
             kind,
+            revision: 0,
             message,
+            correction_warning: None,
             elapsed_seconds: None,
         },
     );
 }
 
 pub(crate) fn emit_status_event(app: &AppHandle, event: StatusEvent) {
-    if let Ok(mut current) = app.state::<AppState>().status.lock() {
-        *current = event.clone();
-    }
-    manage_recording_overlay(app, &event);
-    let _ = app.emit("slovo://status", event);
+    let state = app.state::<AppState>();
+    let published = {
+        let Ok(mut current) = state.status.lock() else { return; };
+        publish_status_locked(&mut current, &state.status_revision, event, |published| {
+            if let Err(error) = app.emit("slovo://status", published.clone()) {
+                eprintln!("[slovo] cannot emit status event: {error}");
+            }
+        })
+    };
+    queue_status_window_action(app, published.clone(), published.revision);
 }
 
-fn manage_recording_overlay(app: &AppHandle, event: &StatusEvent) {
-    let result = match event.kind {
-        StatusKind::Recording | StatusKind::Error => {
-            get_or_create_recording_overlay(app).and_then(|window| show_recording_overlay(&window))
-        }
-        _ => app
-            .get_webview_window("recording-overlay")
-            .map_or(Ok(()), |window| hide_recording_overlay(&window)),
-    };
-    if let Err(error) = result {
-        eprintln!("[slovo] recording overlay error: {error}");
-    }
+fn publish_status_locked(
+    snapshot: &mut StatusEvent,
+    revision: &AtomicU64,
+    mut event: StatusEvent,
+    mut publish: impl FnMut(&StatusEvent),
+) -> StatusEvent {
+    event.revision = revision.fetch_add(1, Ordering::AcqRel) + 1;
+    *snapshot = event.clone();
+    publish(&event);
+    event
+}
 
-    if matches!(event.kind, StatusKind::Error) {
-        let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(Duration::from_secs(2)).await;
-            let still_error = app
-                .state::<AppState>()
-                .status
-                .lock()
-                .is_ok_and(|status| matches!(status.kind, StatusKind::Error));
-            if still_error {
+fn with_current_status_revision<T>(
+    status: &Mutex<StatusEvent>,
+    expected: u64,
+    action: impl FnOnce() -> T,
+) -> Option<T> {
+    let current = status.lock().ok()?;
+    (current.revision == expected).then(action)
+}
+
+fn queue_status_window_action(app: &AppHandle, event: StatusEvent, revision: u64) {
+    let queued_app = app.clone();
+    if app.run_on_main_thread(move || {
+        let app = queued_app;
+        let state = app.state::<AppState>();
+        let presentation = status_presentation(&event.kind);
+        let current = with_current_status_revision(&state.status, revision, || {
+            manage_recording_overlay(&app, &event);
+        });
+        if current.is_some() && presentation.delay_hide {
+            queue_overlay_hide(app.clone(), revision);
+        }
+    }).is_err() {
+        eprintln!("[slovo] could not queue status presentation");
+    }
+}
+
+fn queue_overlay_hide(app: AppHandle, revision: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(4)).await;
+        let queued_app = app.clone();
+        if app.run_on_main_thread(move || {
+            let app = queued_app;
+            let state = app.state::<AppState>();
+            with_current_status_revision(&state.status, revision, || {
                 if let Some(window) = app.get_webview_window("recording-overlay") {
                     if let Err(error) = hide_recording_overlay(&window) {
                         eprintln!("[slovo] recording overlay error: {error}");
                     }
                 }
-            }
-        });
+            });
+        }).is_err() {
+            eprintln!("[slovo] could not queue overlay hide");
+        }
+    });
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct StatusPresentation { show: bool, delay_hide: bool }
+
+fn status_presentation(kind: &StatusKind) -> StatusPresentation {
+    match kind {
+        StatusKind::Recording | StatusKind::Transcribing | StatusKind::Correcting => StatusPresentation { show: true, delay_hide: false },
+        StatusKind::Inserted | StatusKind::Copied | StatusKind::Error => StatusPresentation { show: true, delay_hide: true },
+        StatusKind::Ready => StatusPresentation { show: false, delay_hide: false },
+    }
+}
+
+fn manage_recording_overlay(app: &AppHandle, event: &StatusEvent) {
+    let result = if status_presentation(&event.kind).show {
+        get_or_create_recording_overlay(app).and_then(|window| show_recording_overlay(&window))
+    } else {
+        app.get_webview_window("recording-overlay")
+            .map_or(Ok(()), |window| hide_recording_overlay(&window))
+    };
+    if let Err(error) = result {
+        eprintln!("[slovo] recording overlay error: {error}");
     }
 }
 
@@ -612,6 +736,81 @@ pub(crate) fn set_shortcut_status(app: &AppHandle, status: ShortcutBackendStatus
 mod tests {
     use super::*;
 
+    fn status_event(kind: StatusKind) -> StatusEvent {
+        StatusEvent { kind, revision: 0, message: None, correction_warning: None, elapsed_seconds: None }
+    }
+
+    #[test]
+    fn status_publications_are_monotonic_and_update_snapshot() {
+        let mut snapshot = status_event(StatusKind::Ready);
+        let revision = AtomicU64::new(0);
+        let mut delivered = Vec::new();
+        for kind in [StatusKind::Error, StatusKind::Recording] {
+            let event = publish_status_locked(&mut snapshot, &revision, status_event(kind), |event| delivered.push(event.clone()));
+            assert_eq!(event.revision, delivered.len() as u64);
+            assert_eq!(snapshot.revision, event.revision);
+            assert!(std::mem::discriminant(&snapshot.kind) == std::mem::discriminant(&event.kind));
+        }
+        assert_eq!(delivered.len(), 2);
+        assert!(matches!(delivered[0].kind, StatusKind::Error));
+        assert!(matches!(delivered[1].kind, StatusKind::Recording));
+    }
+
+    #[test]
+    fn status_presentation_classifies_all_kinds() {
+        for (kind, show, delay_hide) in [
+            (StatusKind::Recording, true, false), (StatusKind::Transcribing, true, false),
+            (StatusKind::Correcting, true, false), (StatusKind::Inserted, true, true),
+            (StatusKind::Copied, true, true), (StatusKind::Error, true, true),
+            (StatusKind::Ready, false, false),
+        ] {
+            assert_eq!(status_presentation(&kind), StatusPresentation { show, delay_hide });
+        }
+    }
+
+    #[test]
+    fn delayed_hide_requires_matching_revision_and_does_not_mutate_snapshot() {
+        let mut snapshot = status_event(StatusKind::Ready);
+        let revision = AtomicU64::new(0);
+        let terminal = publish_status_locked(&mut snapshot, &revision, StatusEvent { message: Some("done".into()), correction_warning: Some("warning".into()), ..status_event(StatusKind::Error) }, |_| {});
+        let before = serde_json::to_value(&snapshot).unwrap();
+        let hidden = std::cell::Cell::new(0);
+        let status = Mutex::new(snapshot);
+        let pending_hide = || { with_current_status_revision(&status, terminal.revision, || hidden.set(hidden.get() + 1)); };
+        publish_status_locked(&mut status.lock().unwrap(), &revision, status_event(StatusKind::Recording), |_| {});
+        pending_hide();
+        assert_eq!(hidden.get(), 0);
+        let mut matching_snapshot = status_event(StatusKind::Ready);
+        let matching_terminal = publish_status_locked(&mut matching_snapshot, &AtomicU64::new(terminal.revision - 1), terminal.clone(), |_| {});
+        let matching_status = Mutex::new(matching_snapshot);
+        let matching_before = serde_json::to_value(&*matching_status.lock().unwrap()).unwrap();
+        with_current_status_revision(&matching_status, matching_terminal.revision, || hidden.set(hidden.get() + 1));
+        assert_eq!(hidden.get(), 1);
+        assert_eq!(serde_json::to_value(&*matching_status.lock().unwrap()).unwrap(), matching_before);
+        assert_eq!(before, matching_before);
+    }
+
+    #[test]
+    fn status_serialization_uses_camel_case_and_omits_empty_fields() {
+        let value = serde_json::to_value(StatusEvent { correction_warning: Some("warning".into()), ..status_event(StatusKind::Correcting) }).unwrap();
+        assert_eq!(value["correctionWarning"], "warning");
+        assert!(value.get("elapsedSeconds").is_none());
+        assert!(value.get("message").is_none());
+    }
+
+    #[test]
+    fn stale_queued_revision_does_not_run_action() {
+        let status = Mutex::new(status_event(StatusKind::Error));
+        let revision = status.lock().unwrap().revision;
+        let ran = std::cell::Cell::new(false);
+        *status.lock().unwrap() = StatusEvent { revision: revision + 1, ..status_event(StatusKind::Recording) };
+        assert_eq!(with_current_status_revision(&status, revision, || ran.set(true)), None);
+        assert!(!ran.get());
+        assert_eq!(with_current_status_revision(&status, revision + 1, || ran.set(true)), Some(()));
+        assert!(ran.get());
+        assert_eq!(status.lock().unwrap().revision, revision + 1);
+    }
+
     fn shortcut_runtime() -> Mutex<ShortcutRuntime> {
         Mutex::new(ShortcutRuntime {
             manager: Some(ShortcutManager::native()),
@@ -701,13 +900,50 @@ mod tests {
     fn hotkey_capture_ignores_stale_commands() {
         let state = test_state();
 
-        state.set_hotkey_capture(true, 1);
+        state.set_hotkey_capture(true, 1).unwrap();
         assert!(state.is_hotkey_capture_active());
 
-        state.set_hotkey_capture(false, 2);
+        state.set_hotkey_capture(false, 2).unwrap();
         assert!(!state.is_hotkey_capture_active());
 
-        state.set_hotkey_capture(true, 1);
+        state.set_hotkey_capture(true, 1).unwrap();
+        assert!(!state.is_hotkey_capture_active());
+    }
+
+    #[test]
+    fn capture_rejects_processing_and_pending_start_but_release_is_allowed() {
+        let state = test_state();
+        *state.processing.lock().unwrap() = true;
+        assert!(state.set_hotkey_capture(true, 1).is_err());
+        assert!(!state.is_hotkey_capture_active(), "rejected capture must not activate");
+        assert!(state.set_hotkey_capture(false, 1).is_ok());
+        *state.processing.lock().unwrap() = false;
+
+        let start = state.begin_recording_start().expect("start reservation");
+        assert!(state.set_hotkey_capture(true, 2).is_err());
+        assert!(state.set_hotkey_capture(false, 2).is_ok());
+        assert!(state.finish_recording_start(start));
+    }
+
+    #[test]
+    fn reservation_excludes_capture_and_rolls_back_on_drop() {
+        let state = test_state();
+        {
+            let reservation = state.reserve_idle_processing().expect("idle reservation");
+            assert!(state.set_hotkey_capture(true, 1).is_err());
+            drop(reservation);
+        }
+        assert!(state.set_hotkey_capture(true, 1).is_ok());
+    }
+
+    #[test]
+    fn stale_activation_while_busy_is_a_noop() {
+        let state = test_state();
+        state.set_hotkey_capture(true, 2).unwrap();
+        state.set_hotkey_capture(false, 2).unwrap();
+        *state.processing.lock().unwrap() = true;
+
+        assert!(state.set_hotkey_capture(true, 1).is_ok());
         assert!(!state.is_hotkey_capture_active());
     }
 
@@ -715,8 +951,8 @@ mod tests {
     fn newer_capture_is_not_cleared_by_older_end() {
         let state = test_state();
 
-        state.set_hotkey_capture(true, 3);
-        state.set_hotkey_capture(false, 2);
+        state.set_hotkey_capture(true, 3).unwrap();
+        state.set_hotkey_capture(false, 2).unwrap();
 
         assert!(state.is_hotkey_capture_active());
     }

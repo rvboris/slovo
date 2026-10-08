@@ -1,55 +1,45 @@
 import { Button } from "@/components/ui/button";
+import type { JSX } from "react";
+import { PermissionCommands } from "./PermissionCommands";
+import { PermissionDisclosure } from "./PermissionDisclosure";
+import type { ShortcutPermissionSetup } from "@/lib/types";
 import { X } from "lucide-react";
-import { type ShortcutPermissionSetup } from "@/lib/types";
 
 interface PermissionPanelProps {
-  visible: boolean;
-  loading: boolean;
-  stateMessage: string;
-  setup: ShortcutPermissionSetup | null;
-  installCommands: string[];
-  revokeCommands: string[];
-  ackChecked: boolean;
-  copyInstallLabel: string;
-  copyRevokeLabel: string;
-  copyInstallDisabled: boolean;
-  copyRevokeDisabled: boolean;
-  verifyDisabled: boolean;
-  panelRef: React.RefObject<HTMLElement | null>;
-  onClose: () => void;
-  onAckChange: (checked: boolean) => void;
-  onCopyInstall: () => void;
-  onCopyRevoke: () => void;
-  onVerify: () => void;
+  readonly visible: boolean;
+  readonly loading: boolean;
+  readonly stateMessage: string;
+  readonly setup: Readonly<Omit<ShortcutPermissionSetup, "installCommands" | "revokeCommands">> | null;
+  readonly installCommands: readonly string[];
+  readonly revokeCommands: readonly string[];
+  readonly ackChecked: boolean;
+  readonly copyInstallLabel: string;
+  readonly copyRevokeLabel: string;
+  readonly copyInstallDisabled: boolean;
+  readonly copyRevokeDisabled: boolean;
+  readonly verifyDisabled: boolean;
+  readonly panelRef: React.RefObject<HTMLElement | null>;
+  readonly onClose: () => void;
+  readonly onAckChange: (checked: boolean) => void;
+  readonly onCopyInstall: () => void;
+  readonly onCopyRevoke: () => void;
+  readonly onVerify: () => void;
 }
 
-export function PermissionPanel({
-  visible,
-  loading,
-  stateMessage,
-  setup,
-  installCommands,
-  revokeCommands,
-  ackChecked,
-  copyInstallLabel,
-  copyRevokeLabel,
-  copyInstallDisabled,
-  copyRevokeDisabled,
-  verifyDisabled,
-  panelRef,
-  onClose,
-  onAckChange,
-  onCopyInstall,
-  onCopyRevoke,
-  onVerify,
-}: PermissionPanelProps) {
-  if (!visible) return null;
+export function PermissionPanel({   visible,   loading,   stateMessage,   setup,   installCommands,   revokeCommands,   ackChecked,   copyInstallLabel,   copyRevokeLabel,   copyInstallDisabled,   copyRevokeDisabled,   verifyDisabled,   panelRef,   onClose,   onAckChange,   onCopyInstall,   onCopyRevoke,   onVerify, }: PermissionPanelProps) : JSX.Element | null {
+  if (!visible) {return null;}
 
-  const setupError = setup?.setupError?.trim();
+  const setupError = setup?.setupError?.trim() ?? "";
+  const emptyLength = 0;
+  const note = setup?.note?.trim() ?? "";
+  let revokeNote = note;
+  if (note === "") { revokeNote = "Эти команды вернут настройки доступа к устройствам ввода обратно."; }
+  let setupLabel = "Доступ ещё не настроен.";
+  if (setup?.installed === true) { setupLabel = "Доступ уже настроен. Если сочетание всё ещё не работает, проверьте его снова."; }
 
   return (
     <section
-      ref={panelRef as React.RefObject<HTMLElement>}
+      ref={panelRef}
       aria-labelledby="permission-panel-title"
       className="rounded-lg border-l-[3px] border-l-destructive bg-muted/50 p-5 space-y-4"
     >
@@ -74,48 +64,23 @@ export function PermissionPanel({
         пользователя к потоку событий от клавиатуры.
       </p>
 
-      <ul className="space-y-2 text-xs text-muted-foreground">
-        <li className="flex gap-2">
-          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-destructive flex-shrink-0" />
-          <span>
-            Доступ получает <strong className="text-foreground font-semibold">весь сеанс пользователя</strong>,
-            а не только Слово. Любая программа, запущенная от вашего имени,
-            сможет читать все нажатия клавиш.
-          </span>
-        </li>
-        <li className="flex gap-2">
-          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-destructive flex-shrink-0" />
-          <span>
-            Сам помощник Слово фильтрует события локально и передаёт наружу
-            только нажатия и отпускания назначенного сочетания. Но это не
-            защищает от других программ того же пользователя.
-          </span>
-        </li>
-        <li className="flex gap-2">
-          <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-destructive flex-shrink-0" />
-          <span>
-            Команды ниже выполняются только вами — никаких скрытых повышений
-            прав. Скопируйте их в терминал и запустите самостоятельно.
-          </span>
-        </li>
-      </ul>
+      <PermissionDisclosure />
 
       {stateMessage && (
-        <div
-          role="status"
+        <output
           aria-live="polite"
           aria-atomic="true"
-          className="rounded-md bg-muted px-3 py-2 text-xs text-foreground"
+          className="block rounded-md bg-muted px-3 py-2 text-xs text-foreground"
         >
           {stateMessage}
-        </div>
+        </output>
       )}
 
       {loading && (
-        <div role="status" aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground">
+        <output aria-live="polite" className="flex items-center gap-2 text-xs text-muted-foreground">
           <div className="h-3 w-3 animate-spin rounded-full border-2 border-muted-foreground border-t-transparent" />
           <span>Загружаем инструкции…</span>
-        </div>
+        </output>
       )}
 
       {setup && !loading && (
@@ -127,9 +92,7 @@ export function PermissionPanel({
           )}
 
           <p className="text-sm font-semibold">
-            {setup.installed
-              ? "Доступ уже настроен. Если сочетание всё ещё не работает, проверьте его снова."
-              : "Доступ ещё не настроен."}
+            {setupLabel}
           </p>
 
           <div className="rounded-md bg-destructive/10 p-3">
@@ -137,7 +100,7 @@ export function PermissionPanel({
               <input
                 type="checkbox"
                 checked={ackChecked}
-                onChange={(e) => onAckChange(e.target.checked)}
+                onChange={(event) =>{  onAckChange(event.target.checked); }}
                 className="mt-0.5 h-4 w-4 rounded accent-primary"
               />
               <span>
@@ -146,55 +109,7 @@ export function PermissionPanel({
             </label>
           </div>
 
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Команды для включения</h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onCopyInstall}
-                disabled={copyInstallDisabled}
-                className="text-xs h-7"
-              >
-                {copyInstallLabel}
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Запустите эти команды в терминале от своего пользователя, затем
-              вернитесь и нажмите «Проверить снова».
-            </p>
-            {installCommands.length > 0 && (
-              <pre className="rounded-md bg-muted p-3 overflow-x-auto text-sm leading-relaxed">
-                <code className="font-mono">{installCommands.join("\n")}</code>
-              </pre>
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold">Команды для отключения</h3>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onCopyRevoke}
-                disabled={copyRevokeDisabled}
-                className="text-xs h-7"
-              >
-                {copyRevokeLabel}
-              </Button>
-            </div>
-            {(setup.note?.trim() || revokeCommands.length > 0) && (
-              <p className="text-xs text-muted-foreground">
-                {setup.note?.trim() ||
-                  "Эти команды вернут настройки доступа к устройствам ввода обратно."}
-              </p>
-            )}
-            {revokeCommands.length > 0 && (
-              <pre className="rounded-md bg-muted p-3 overflow-x-auto text-sm leading-relaxed">
-                <code className="font-mono">{revokeCommands.join("\n")}</code>
-              </pre>
-            )}
-          </div>
+          <PermissionCommands installCommands={installCommands} revokeCommands={revokeCommands} copyInstallLabel={copyInstallLabel} copyInstallDisabled={copyInstallDisabled} copyRevokeLabel={copyRevokeLabel} copyRevokeDisabled={copyRevokeDisabled} onCopyInstall={onCopyInstall} onCopyRevoke={onCopyRevoke} emptyLength={emptyLength} note={note} revokeNote={revokeNote} />
         </div>
       )}
 

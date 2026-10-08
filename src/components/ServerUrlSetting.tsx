@@ -1,25 +1,26 @@
 import { Input } from "@/components/ui/input";
+import type { JSX } from "react";
 import { Label } from "@/components/ui/label";
 import type { ServerAvailability } from "@/hooks/useServerAvailability";
 import { cn } from "@/lib/utils";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 interface ServerUrlSettingProps {
-  value: string;
-  availability: ServerAvailability;
-  onScheduleSave: (value: string) => void;
-  onBlurSave: (value: string) => void;
-  onCheckAvailability: (value: string) => void;
-  onInvalidateAvailability: () => void;
+  readonly value: string;
+  readonly availability: ServerAvailability;
+  readonly onScheduleSave: (value: string) => void;
+  readonly onBlurSave: (value: string) => void;
+  readonly onCheckAvailability: (value: string) => void;
+  readonly onInvalidateAvailability: () => void;
 }
 
 function validateServerUrl(value: string): string | null {
   const trimmed = value.trim();
-  if (!trimmed) return "Укажите адрес сервера.";
+  if (trimmed === "") {return "Укажите адрес сервера.";}
   try {
     const url = new URL(trimmed);
     if (url.protocol !== "http:" && url.protocol !== "https:")
-      throw new Error();
+      {throw new Error("Invalid server URL");}
   } catch {
     return "Введите полный адрес, включая http:// или https://.";
   }
@@ -33,53 +34,55 @@ export function ServerUrlSetting({
   onBlurSave,
   onCheckAvailability,
   onInvalidateAvailability,
-}: ServerUrlSettingProps) {
+}: ServerUrlSettingProps) : JSX.Element | null {
   const [localValue, setLocalValue] = useState(value);
   const [error, setError] = useState("");
 
-  // Sync from external value (e.g. after save roundtrip)
-  useEffect(() => {
-    if (document.activeElement?.id !== "server-url") {
-      setLocalValue(value);
-    }
-  }, [value]);
+  const [previousValue, setPreviousValue] = useState(value);
+  if (previousValue !== value) {
+    setPreviousValue(value);
+    if (document.activeElement?.id !== "server-url") { setLocalValue(value); }
+  }
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = e.target.value;
-    setLocalValue(v);
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>): void => {
+    const nextValue = event.target.value;
+    setLocalValue(nextValue);
     setError("");
     onInvalidateAvailability();
-    onScheduleSave(v);
+    onScheduleSave(nextValue);
   };
 
-  const handleBlur = () => {
+  const handleBlur = (): void => {
     const message = validateServerUrl(localValue);
     setError(message ?? "");
-    if (!message) {
+    if (message === null) {
       onBlurSave(localValue);
       onCheckAvailability(localValue);
     }
   };
 
   const availabilityView = {
-    idle: null,
-    checking: {
-      text: "Проверяем доступность…",
-      dotClass: "bg-muted-foreground animate-pulse",
-      textClass: "text-muted-foreground",
-    },
     available: {
-      text: "Сервер доступен",
       dotClass: "bg-emerald-600 dark:bg-emerald-400",
+      text: "Соединение установлено",
       textClass: "text-emerald-700 dark:text-emerald-400",
     },
+    checking: {
+      dotClass: "bg-muted-foreground animate-pulse",
+      text: "Проверяем соединение…",
+      textClass: "text-muted-foreground",
+    },
+    idle: null,
     unavailable: {
-      text: "Сервер недоступен",
       dotClass: "bg-destructive",
+      text: "Нет соединения",
       textClass: "text-destructive",
     },
   }[availability];
 
+  let describedBy = "server-help";
+  if (availabilityView !== null) { describedBy = "server-help server-availability"; }
+  if (error !== "") { describedBy = "server-help server-error"; }
   return (
     <div className="space-y-2">
       <Label htmlFor="server-url">Сервер распознавания</Label>
@@ -92,26 +95,14 @@ export function ServerUrlSetting({
         value={localValue}
         onChange={handleChange}
         onBlur={handleBlur}
-        aria-invalid={error ? "true" : "false"}
-        aria-describedby={
-          error
-            ? "server-help server-error"
-            : availabilityView
-              ? "server-help server-availability"
-              : "server-help"
-        }
+        aria-invalid={error !== ""}
+        aria-describedby={describedBy}
       />
-      <div className="flex min-h-4 items-center justify-between gap-3 text-xs">
-        <p id="server-help" className="text-muted-foreground">
-          Полный адрес с http:// или https://
-        </p>
-        {!error && availabilityView && (
-          <p
-            id="server-availability"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-            className={cn(
+      <div className="flex min-h-4 flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs">
+        <p id="server-help" className="text-muted-foreground">Полный адрес с http:// или https://</p>
+        {error === "" && availabilityView !== null && (
+          <output id="server-availability" aria-live="polite" aria-atomic="true"
+        className={cn(
               "inline-flex shrink-0 items-center gap-1.5",
               availabilityView.textClass,
             )}
@@ -124,7 +115,7 @@ export function ServerUrlSetting({
               aria-hidden="true"
             />
             {availabilityView.text}
-          </p>
+          </output>
         )}
       </div>
       {error && (
