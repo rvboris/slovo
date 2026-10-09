@@ -44,13 +44,15 @@ function mount(strict = false): ReturnType<typeof renderHook> {
   return renderHook(() => useWindowAutoGrow({ current: target }), { reactStrictMode: strict });
 }
 describe('useWindowAutoGrow', () => {
-  it('coalesces observations during delayed IPC and applies disappearance afterward', async () => {
+  it('coalesces observations during delayed IPC and applies the newest content height afterward', async () => {
     const first = deferred<boolean>();
+    height = 560;
     setSize.mockImplementationOnce(async (size: { height: number }) => { await first.promise; height = size.height; });
-    const hook = mount(); signal(40); await settle(); signal(60); signal(0); first.resolve(true); await settle();
+    const hook = mount(); signal(578); await settle(); signal(590); signal(560); first.resolve(true); await settle();
     expect(setSize).toHaveBeenCalledTimes(2);
-    expect(setSize.mock.calls[0]?.[0].height).toBe(260);
-    expect(setSize.mock.calls[1]?.[0].height).toBe(200);
+    expect(setSize.mock.calls[0]?.[0].height).toBe(578);
+    expect(setSize.mock.calls[0]?.[0].width).toBe(400);
+    expect(setSize.mock.calls[1]?.[0].height).toBe(560);
     hook.unmount();
   });
   it('caps to work area and reconciles actual applied size', async () => {

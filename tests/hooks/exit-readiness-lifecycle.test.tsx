@@ -10,12 +10,11 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: api.invoke }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: api.listen }));
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: (): typeof api => api }));
 const noop = (): void => undefined;
-const clean = (): boolean => false;
 const load = async (): Promise<void> => { await Promise.resolve(); };
 function useWindowGuard(version: number): ReturnType<typeof useExitGuard> {
   const guard = useExitGuard(noop);
   const reload = useCallback(async (): Promise<void> => { await Promise.resolve(version); await load(); }, [version]);
-  useCorrectionEvents({ applyExitRequest: guard.applyExitRequest, load: reload, probeReady: guard.probeReady, setConfirmClose: noop, setError: noop, shouldConfirmClose: clean });
+  useCorrectionEvents({ applyExitRequest: guard.applyExitRequest, load: reload, probeReady: guard.probeReady, setError: noop, });
   return guard;
 }
 beforeEach(() => {

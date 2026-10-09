@@ -19,43 +19,8 @@ use std::sync::mpsc;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-// Serialize disk writes and hotkey replacement across both settings windows.
+// Serialize disk writes and hotkey replacement across settings updates.
 static SETTINGS_SAVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-#[tauri::command]
-pub async fn open_correction_settings(app: AppHandle) -> Result<(), String> {
-    let (send, receive) = tokio::sync::oneshot::channel();
-    let handle = app.clone();
-    app.run_on_main_thread(move || {
-        let result: Result<(), String> = (|| {
-            // Serialize this decision with approval on the main thread.
-            if crate::app::exit_approved(&handle) {
-                return Ok(());
-            }
-            let window = if let Some(window) = handle.get_webview_window("correction-settings") {
-                window
-            } else {
-                tauri::WebviewWindowBuilder::new(
-                    &handle,
-                    "correction-settings",
-                    tauri::WebviewUrl::App("index.html".into()),
-                )
-                .title("Слово — Корректировка текста")
-                .decorations(false)
-                .inner_size(560.0, 740.0)
-                .min_inner_size(360.0, 420.0)
-                .build()
-                .map_err(|error| error.to_string())?
-            };
-            window.unminimize().map_err(|error| error.to_string())?;
-            window.show().map_err(|error| error.to_string())?;
-            window.set_focus().map_err(|error| error.to_string())
-        })();
-        let _ = send.send(result);
-    })
-    .map_err(|error| error.to_string())?;
-    receive.await.map_err(|error| error.to_string())?
-}
 
 fn update_correction_settings_with(
     runtime: &mut SettingsRuntime,
@@ -792,7 +757,7 @@ pub fn update_settings(app: AppHandle, settings: Settings) -> Result<Settings, S
 
 /// Returns the pending app-exit request id, if any.
 ///
-/// Called by the correction window after registering its exit listener so a
+/// Called by the main window after registering its exit listener so a
 /// request raised before (or during) subscription is not lost.
 #[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
 #[tauri::command]
@@ -801,7 +766,7 @@ pub fn correction_exit_ready(app: AppHandle) -> Option<u64> {
         .and_then(|gate| gate.pending_id())
 }
 
-/// Applies the correction window's decision on a pending app-exit request.
+/// Applies the main window's decision on a pending app-exit request.
 #[allow(clippy::needless_pass_by_value)] // Tauri command parameters are framework-injected.
 #[tauri::command]
 pub async fn resolve_exit_request(

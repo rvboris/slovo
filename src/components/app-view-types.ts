@@ -1,4 +1,4 @@
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import type { TriggerType } from "@/lib/types";
 import type { useHotkey } from "@/hooks/useHotkey";
 import type { useInputDevices } from "@/hooks/useInputDevices";
@@ -10,6 +10,8 @@ import type { useStatus } from "@/hooks/useStatus";
 import type { useTheme } from "@/hooks/useTheme";
 
 export interface AppViewProps {
+  readonly correctionContent?: ReactNode;
+  readonly correctionNotices?: ReactNode;
   readonly theme: ReturnType<typeof useTheme>["theme"];
   readonly toggleTheme: () => void;
   readonly status: Readonly<ReturnType<typeof useStatus>>;

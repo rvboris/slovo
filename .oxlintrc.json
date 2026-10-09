@@ -146,11 +146,16 @@
           "treatMethodsAsReadonly": false,
           "checkParameterProperties": true,
           "allow": [
-            { "from": "package", "package": "react", "name": ["ForwardedRef", "RefObject", "ReactElement", "ChangeEvent", "FormEvent"] },
+            { "from": "package", "package": "react", "name": ["ForwardedRef", "RefObject", "ReactElement", "ReactNode", "ChangeEvent", "FormEvent"] },
             { "from": "package", "package": "@tauri-apps/api", "name": "CloseRequestedEvent" }
           ]
         }]
       }
+    },
+    {
+      "files": ["src/components/AppView.tsx"],
+      // The main window composes the existing settings panels and owns content-based auto-grow.
+      "rules": { "import/max-dependencies": ["error", { "max": 12, "ignoreTypeImports": true }] }
     },
     {
       "files": ["src/App.tsx"],

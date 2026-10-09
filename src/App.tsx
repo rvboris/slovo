@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AppView } from "@/components/AppView";
 import type { JSX } from "react";
 import type { TriggerType } from "@/lib/types";
-import { invoke } from "@tauri-apps/api/core";
+import { useCorrectionScreen } from "@/hooks/use-correction-screen";
 import { useHotkey } from "@/hooks/useHotkey";
 import { useInputDevices } from "@/hooks/useInputDevices";
 import { usePermissionSetup } from "@/hooks/usePermissionSetup";
@@ -151,9 +151,6 @@ export function App() : JSX.Element | null {
   );
 
   const correctionLabel = correctionStatus(settingsLoaded, settings.llmServerUrl);
-  async function openCorrection(): Promise<void> {
-    try { await invoke("open_correction_settings"); }
-    catch { showError("Не удалось открыть настройки корректировки."); }
-  }
-  return <AppView theme={theme} toggleTheme={toggleTheme} status={status} settings={settings} settingsLoaded={settingsLoaded} hotkey={hotkey} shortcutStatus={shortcutStatus} retryShortcutBackend={retryShortcutBackend} permission={permission} serverAvailability={serverAvailability} scheduleServerSave={scheduleServerSave} saveServerNow={saveServerNow} deviceOptions={deviceOptions} areInputDevicesLoading={areInputDevicesLoading} loadInputDevices={loadInputDevices} handleDeviceChange={handleDeviceChange} handleTriggerChange={handleTriggerChange} correctionLabel={correctionLabel} openCorrection={openCorrection} errorMessage={errorMessage} hasRetry={hasRetry} retryLastAction={retryLastAction} handleVerify={handleVerify} saveMessage={saveMessage} />;
+  const correction = useCorrectionScreen();
+  return <AppView correctionContent={correction.content} correctionNotices={correction.notices} theme={theme} toggleTheme={toggleTheme} status={status} settings={settings} settingsLoaded={settingsLoaded} hotkey={hotkey} shortcutStatus={shortcutStatus} retryShortcutBackend={retryShortcutBackend} permission={permission} serverAvailability={serverAvailability} scheduleServerSave={scheduleServerSave} saveServerNow={saveServerNow} deviceOptions={deviceOptions} areInputDevicesLoading={areInputDevicesLoading} loadInputDevices={loadInputDevices} handleDeviceChange={handleDeviceChange} handleTriggerChange={handleTriggerChange} correctionLabel={correctionLabel} openCorrection={correction.open} errorMessage={errorMessage} hasRetry={hasRetry} retryLastAction={retryLastAction} handleVerify={handleVerify} saveMessage={saveMessage} />;
 }

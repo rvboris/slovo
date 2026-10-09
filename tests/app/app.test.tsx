@@ -28,7 +28,7 @@ beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   api.emit.mockResolvedValue(null);
-  api.listen.mockImplementation((name: string, callback: (event: { payload: unknown }) => void) => { listeners.set(name, callback); const dispose = vi.fn(); disposers.push(dispose); return dispose; });
+  api.listen.mockImplementation((name: string, callback: (event: { payload: unknown }) => void) => { const previous = listeners.get(name); listeners.set(name, (event) => { previous?.(event); callback(event); }); const dispose = vi.fn(); disposers.push(dispose); return dispose; });
   api.invoke.mockReset().mockImplementation((command: string, args?: { settings?: Partial<Settings> }) => {
     switch (command) {
       case "get_status": { return { kind: "ready", revision: 0 }; }
@@ -98,7 +98,7 @@ describe("App and AppView integration", () => {
     await user.click(screen.getByRole("radio", { name: "Удержание" }));
     await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith("update_settings", { settings: { ...settings, triggerType: "hold" } }); });
     await user.click(screen.getByRole("button", { name: "Настроить" }));
-    expect(api.invoke).toHaveBeenCalledWith("open_correction_settings");
+    expect(await screen.findByRole("button", { name: "Отмена" })).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Включить тёмную тему" }));
     expect(api.emit).toHaveBeenCalledWith("slovo://theme-changed", "dark");
     view.unmount();
@@ -169,14 +169,6 @@ describe("App and AppView integration", () => {
     expect(api.invoke.mock.calls.filter(([command]) => command === "retry_shortcut_backend").length).toBe(1);
   });
 
-  it("reports open-window failure without offering an unrelated retry", async () => {
-    render(<App />);
-    await screen.findByText("Сочетание активно");
-    api.invoke.mockRejectedValueOnce(new Error("denied"));
-    await userEvent.setup().click(screen.getByRole("button", { name: "Настроить" }));
-    expect(screen.getByRole("alert")).toBeVisible();
-    expect(screen.queryByRole("button", { name: "Повторить" })).not.toBeInTheDocument();
-  });
 
   it("retries failed initial settings from the error banner", async () => {
     const invoke = api.invoke.getMockImplementation();

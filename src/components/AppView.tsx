@@ -1,5 +1,5 @@
 import type { AppViewProps } from "./app-view-types";
-import { Button } from "@/components/ui/button";
+import { CorrectionSection } from "@/components/CorrectionSection";
 import { HotkeySetting } from "@/components/HotkeySetting";
 import { InputDeviceSetting } from "@/components/InputDeviceSetting";
 import type { JSX } from "react";
@@ -8,14 +8,21 @@ import { PermissionPanel } from "@/components/PermissionPanel";
 import { ServerUrlSetting } from "@/components/ServerUrlSetting";
 import { StatusHeader } from "@/components/StatusHeader";
 import { TriggerSetting } from "@/components/TriggerSetting";
+import { useRef } from "react";
+import { useWindowAutoGrow } from "@/hooks/useWindowAutoGrow";
 
-export function AppView({ theme, toggleTheme, status, settings, settingsLoaded, hotkey, shortcutStatus, retryShortcutBackend, permission, serverAvailability, scheduleServerSave, saveServerNow, deviceOptions, areInputDevicesLoading, loadInputDevices, handleDeviceChange, handleTriggerChange, correctionLabel, openCorrection, errorMessage, hasRetry, retryLastAction, handleVerify, saveMessage }: AppViewProps): JSX.Element {
+export function AppView({ correctionContent, correctionNotices, theme, toggleTheme, status, settings, settingsLoaded, hotkey, shortcutStatus, retryShortcutBackend, permission, serverAvailability, scheduleServerSave, saveServerNow, deviceOptions, areInputDevicesLoading, loadInputDevices, handleDeviceChange, handleTriggerChange, correctionLabel, openCorrection, errorMessage, hasRetry, retryLastAction, handleVerify, saveMessage }: AppViewProps): JSX.Element {
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  useWindowAutoGrow(contentRef);
   let correctionTone = "text-[var(--destructive)]";
   if (settings.llmServerUrl !== null && settings.llmServerUrl !== "") { correctionTone = "text-emerald-600 dark:text-emerald-400"; }
   return (
-    <main className="flex h-dvh w-full flex-col gap-5 overflow-hidden">
+    <main className="h-dvh w-full overflow-y-auto">
+      <div ref={contentRef} className="flex flex-col gap-6">
       <StatusHeader kind={status.kind} text={status.text} theme={theme} onToggleTheme={toggleTheme} />
 
+      {correctionNotices}
+      {correctionContent ?? <>
       <NotificationStack
         operationalError={status.operationalError}
         onDismissOperationalError={() => { status.dismissOperationalError(); }}
@@ -26,8 +33,7 @@ export function AppView({ theme, toggleTheme, status, settings, settingsLoaded, 
         onRetry={() => { void retryLastAction(); }}
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
-      <div className="flex flex-col gap-6 [&>*]:shrink-0">
+      <div className="flex flex-col gap-6 px-6 pb-6 [&>*]:shrink-0">
         <HotkeySetting
           hotkey={settings.hotkey}
           isCapturing={hotkey.isCapturing}
@@ -65,15 +71,12 @@ export function AppView({ theme, toggleTheme, status, settings, settingsLoaded, 
           onChange={handleTriggerChange}
         />
 
-        <section className="flex items-center justify-between gap-4 border-t border-border pt-4">
-          <div>
-            <h2 className="text-sm font-semibold">Корректировка текста</h2>
-            <p className={`mt-1 text-xs font-medium ${correctionTone}`}>{correctionLabel}</p>
-          </div>
-          <Button size="sm" variant="outline" disabled={!settingsLoaded} onClick={() => {
-            void openCorrection();
-          }}>Настроить</Button>
-        </section>
+        <CorrectionSection
+          correctionLabel={correctionLabel}
+          correctionTone={correctionTone}
+          disabled={!settingsLoaded}
+          onOpen={() => { void openCorrection(); }}
+        />
 
       <PermissionPanel
         visible={permission.visible}
@@ -98,6 +101,7 @@ export function AppView({ theme, toggleTheme, status, settings, settingsLoaded, 
 
       <output aria-live="polite" aria-atomic="true" className="text-xs text-muted-foreground">{saveMessage || "Настройки сохраняются автоматически"}</output>
       </div>
+      </>}
       </div>
     </main>
   );

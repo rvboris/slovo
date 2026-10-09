@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { FieldLabel } from "@/components/FieldLabel";
 import { Input } from "@/components/ui/input";
 import type { JSX } from "react";
-import { Label } from "@/components/ui/label";
 import type { Settings } from "@/lib/types";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 type Correction = Readonly<Pick<Settings, "llmServerUrl" | "llmModel" | "llmApiKey" | "llmPrompt">>;
+
 function cleanValue(value: string | null): string | null {
   const trimmed = value?.trim() ?? "";
   if (trimmed === "") { return null; }
@@ -93,17 +95,18 @@ export function CorrectionSetting({ settings, onSave, onDirtyChange, onCancel, l
   };
   const { buttonLabel, announcement, enabledLabel, requiredMark } = feedback({ configured: Boolean(settings.llmServerUrl), dirty, enabled, saved, saving });
   return (
-    <form noValidate className="space-y-4" onSubmit={(event: Readonly<{ preventDefault: () => void }>) => { event.preventDefault(); void handleSave(); }}>
+    <TooltipProvider delayDuration={300}>
+    <form id="correction-settings" noValidate className="space-y-4" onSubmit={(event: Readonly<{ preventDefault: () => void }>) => { event.preventDefault(); void handleSave(); }}>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold">Корректировка текста</h2>
         <span className={cn("text-xs font-medium", statusTone(settings.llmServerUrl))}>
           {enabledLabel}
         </span>
       </div>
-      <div className="space-y-2"><Label htmlFor="llm-server-url">Адрес API{requiredMark}</Label><Input id="llm-server-url" value={draft.llmServerUrl ?? ""} autoComplete="off" onChange={(event) => { change("llmServerUrl", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
-      <div className="space-y-2"><Label htmlFor="llm-model">Модель{requiredMark}</Label><Input id="llm-model" value={draft.llmModel ?? ""} autoComplete="off" spellCheck={false} onChange={(event) => { change("llmModel", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
-      <div className="space-y-2"><Label htmlFor="llm-key">API-ключ · необязательно</Label><Input id="llm-key" type="password" value={draft.llmApiKey ?? ""} autoComplete="off" onChange={(event) => { change("llmApiKey", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
-      <div className="space-y-2"><Label htmlFor="llm-prompt">Инструкция{requiredMark}</Label><textarea id="llm-prompt" rows={6} className="block w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={draft.llmPrompt ?? ""} spellCheck={false} onChange={(event) => { change("llmPrompt", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
+      <div className="space-y-2"><FieldLabel htmlFor="llm-server-url" label="Адрес API" mark={requiredMark} hint="Адрес LLM-сервера, совместимого с OpenAI API" /><Input id="llm-server-url" placeholder="https://api.openai.com/v1" value={draft.llmServerUrl ?? ""} autoComplete="off" onChange={(event) => { change("llmServerUrl", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
+      <div className="space-y-2"><FieldLabel htmlFor="llm-model" label="Модель" mark={requiredMark} hint="Название модели, как у провайдера" /><Input id="llm-model" placeholder="gpt-4o-mini" value={draft.llmModel ?? ""} autoComplete="off" spellCheck={false} onChange={(event) => { change("llmModel", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
+      <div className="space-y-2"><FieldLabel htmlFor="llm-key" label="API-ключ" mark=" · необязательно" hint="Ключ провайдера; не нужен для локальных серверов (Ollama, LM Studio)" /><Input id="llm-key" placeholder="sk-…" type="password" value={draft.llmApiKey ?? ""} autoComplete="off" onChange={(event) => { change("llmApiKey", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
+      <div className="space-y-2"><FieldLabel htmlFor="llm-prompt" label="Инструкция" mark={requiredMark} hint="Системная инструкция для модели корректировки" /><textarea id="llm-prompt" placeholder="Исправляй орфографию и пунктуацию…" rows={6} className="block w-full resize-y rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50" value={draft.llmPrompt ?? ""} spellCheck={false} onChange={(event) => { change("llmPrompt", event.currentTarget.value); }} disabled={locked === true || saving} /></div>
       {error && <div role="alert" className="text-sm text-destructive">{error}</div>}
       <output className="sr-only" aria-live="polite">{announcement}</output>
       <div className="flex justify-end gap-2">
@@ -111,5 +114,6 @@ export function CorrectionSetting({ settings, onSave, onDirtyChange, onCancel, l
         <Button type="submit" disabled={saving || locked === true || !dirty}>{buttonLabel}</Button>
       </div>
     </form>
+    </TooltipProvider>
   );
 }

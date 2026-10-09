@@ -4,17 +4,12 @@ import { Button } from "@/components/ui/button";
 import { CorrectionNotices } from "@/components/CorrectionNotices";
 import { CorrectionSetting } from "@/components/CorrectionSetting";
 import type { Settings } from '@/lib/types';
-import { SlovoMark } from "@/components/SlovoMark";
-import { X } from "lucide-react";
-import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invoke } from "@tauri-apps/api/core";import { normalizeSettings } from '@/lib/types';
 import { useCorrectionEvents } from "@/hooks/useCorrectionEvents";
 import { useExitGuard } from "@/hooks/useExitGuard";
-import { useTheme } from "@/hooks/useTheme";
 
 type FailureKind = "load" | "connection";
 const LOAD_ERROR = "Не удалось загрузить настройки.";
-const CLOSE_ERROR = "Не удалось закрыть окно. Попробуйте ещё раз.";
 /** Separate kinds so a retry targets the failure it belongs to. */
 function useCorrectionFailures(): Readonly<{ clearFailure: (kind: FailureKind) => void; error: string; failure: FailureKind | null; reportFailure: (kind: FailureKind, message: string) => void; setError: (message: string) => void }> {
   const [error, setError] = useState("");
@@ -34,9 +29,9 @@ function useCorrectionFailures(): Readonly<{ clearFailure: (kind: FailureKind) =
   return { clearFailure, error, failure, reportFailure, setError };
 }
 
-function useConnectionReporting(reportFailure: (kind: FailureKind, message: string) => void, clearFailure: (kind: FailureKind) => void, setError: (message: string) => void): Readonly<{ handleConnected: () => void; reportCloseError: (message: string) => void; reportConnectionError: (message: string) => void }> {
+function useConnectionReporting(reportFailure: (kind: FailureKind, message: string) => void, clearFailure: (kind: FailureKind) => void): Readonly<{ handleConnected: () => void; reportConnectionError: (message: string) => void }> {
   const reportConnectionError = useCallback((message: string): void => { reportFailure("connection", message); }, [reportFailure]);
-  return { handleConnected: useCallback((): void => { clearFailure("connection"); }, [clearFailure]), reportCloseError: setError, reportConnectionError };
+  return { handleConnected: useCallback((): void => { clearFailure("connection"); }, [clearFailure]), reportConnectionError };
 }
 
 interface SaveContext {
@@ -71,15 +66,9 @@ async function saveCorrection(context: SaveContext, patch: Partial<Settings>): P
   }
 }
 
-async function closeWindow(discard: boolean, onError: (message: string) => void): Promise<void> {
-  try {
-    if (discard) { await getCurrentWindow().destroy(); return; }
-    await getCurrentWindow().close();
-  } catch { onError(CLOSE_ERROR); }
-}
-
-export function CorrectionWindow() : JSX.Element | null {
-  useTheme();
+// oxlint-disable-next-line max-statements -- Keep the existing exit/save controller mounted across both screens.
+export function useCorrectionScreen(): Readonly<{ content: JSX.Element | null; notices: JSX.Element; open: () => Promise<void> }> {
+  const [visible, setVisible] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [confirmClose, setConfirmClose] = useState(false);
   const dirty = useRef(false);
@@ -88,8 +77,7 @@ export function CorrectionWindow() : JSX.Element | null {
   const request = useRef(Symbol("settings-request"));
   const closeNotice = useRef<HTMLElement>(null);
   const { clearFailure, error, failure, reportFailure, setError } = useCorrectionFailures();
-  const { handleConnected, reportCloseError, reportConnectionError } = useConnectionReporting(reportFailure, clearFailure, setError);
-  const shouldConfirmClose = useCallback((): boolean => dirty.current || saving.current, []);
+  const { handleConnected, reportConnectionError } = useConnectionReporting(reportFailure, clearFailure);
   const exitGuard = useExitGuard(setError);
   const load = useCallback(async (): Promise<void> => {
     const revision = Symbol("settings-request");
@@ -99,8 +87,8 @@ export function CorrectionWindow() : JSX.Element | null {
       if (revision === request.current) { setSettings(next); clearFailure("load"); }
     } catch { if (revision === request.current) { reportFailure("load", LOAD_ERROR); } }
   }, [clearFailure, reportFailure]);
-  const { applyExitRequest, probeReady, admitsFormMutation, notifyFormState, exitPending, exitResolving, resolveExit } = exitGuard;
-  const reconnect = useCorrectionEvents({ applyExitRequest, load, onCloseError: reportCloseError, onConnected: handleConnected, probeReady, setConfirmClose, setError: reportConnectionError, shouldConfirmClose });
+  const { admitsNavigation, applyExitRequest, probeReady, admitsFormMutation, notifyFormState, exitPending, exitResolving, resolveExit } = exitGuard;
+  const reconnect = useCorrectionEvents({ applyExitRequest, load, onConnected: handleConnected, probeReady, setError: reportConnectionError });
   const retry = useCallback(async (): Promise<void> => {
     if (failure === "connection") { await reconnect(); return; }
     if (failure === "load") {
@@ -110,27 +98,20 @@ export function CorrectionWindow() : JSX.Element | null {
       await load();
     }
   }, [failure, load, reconnect, settings]);
-  const retryLabel = "Повторить";
 
   const handleDirtyChange = useCallback((value: boolean): void => {
     if (!admitsFormMutation()) { return; }
     dirty.current = value;
     notifyFormState(value, saving.current);
   }, [admitsFormMutation, notifyFormState]);
-  return (
-    <main className="flex h-dvh flex-col overflow-hidden border border-border">
-      <header className="titlebar flex h-10 shrink-0 items-center border-b border-border/80 bg-background/95 pl-4">
-        <div data-tauri-drag-region className="flex h-full min-w-0 flex-1 items-center gap-2">
-          <div className="slovo-chip pointer-events-none flex h-7 w-7 shrink-0 items-center justify-center"><SlovoMark /></div>
-          <h1 className="pointer-events-none truncate text-sm font-semibold tracking-tight">Слово · Корректировка</h1>
-        </div>
-        <button type="button" className="titlebar-control titlebar-close mr-1" aria-label="Закрыть окно" onClick={() => {
-          void closeWindow(false, reportCloseError);
-        }}><X className="h-4 w-4" aria-hidden="true" /></button>
-      </header>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-      {error !== "" && failure !== null && <div role="alert" className="mb-4 text-sm text-destructive">{error} <Button variant="outline" size="sm" onClick={() => { void retry(); }}>{retryLabel}</Button></div>}
-      {error !== "" && failure === null && <div role="alert" className="mb-4 text-sm text-destructive">{error}</div>}
+  const open = useCallback(async (): Promise<void> => { if (admitsNavigation()) { setVisible(true); } await Promise.resolve(); }, [admitsNavigation]);
+  const back = (): void => {
+    if (saving.current || !admitsNavigation()) { return; }
+    if (dirty.current) { setConfirmClose(true); return; }
+    setVisible(false);
+  };
+  const notices = <>
+      {error !== "" && <div role="alert" className="mx-6 space-y-3 rounded-md border border-destructive/30 p-4 text-sm"><p>{error}</p>{failure !== null && <Button variant="outline" size="sm" onClick={() => { void retry(); }}>Повторить</Button>}</div>}
       <CorrectionNotices
         noticeRef={closeNotice}
         exitPending={exitPending}
@@ -141,15 +122,17 @@ export function CorrectionWindow() : JSX.Element | null {
         onApproveExit={() => { void resolveExit("approve"); }}
         onKeepEditing={() => { setConfirmClose(false); }}
         onDiscardClose={() => {
-          if (saving.current) { return; }
-          void closeWindow(true, reportCloseError);
+          if (saving.current || !admitsNavigation()) { return; }
+          dirty.current = false; notifyFormState(false, false); setConfirmClose(false); setVisible(false);
         }}
       />
+    </>;
+  let content: JSX.Element | null = null;
+  if (visible) { content = (
+    <section className="px-6 pb-6">
       {!settings && error === "" && <output className="block">Загрузка настроек…</output>}
-      {settings && <CorrectionSetting settings={settings} locked={exitResolving} canMutate={admitsFormMutation} onDirtyChange={handleDirtyChange} onCancel={() => {
-        if (!saving.current) { void closeWindow(true, reportCloseError); }
-      }} onSave={async (patch) => { await saveCorrection({ admits: admitsFormMutation, dirty, notify: notifyFormState, request, saving, setConfirmClose, setIsSaving, setSettings }, patch); }} />}
-      </div>
-    </main>
-  );
+      {settings && <CorrectionSetting settings={settings} locked={exitResolving} canMutate={admitsFormMutation} onDirtyChange={handleDirtyChange} onCancel={back} onSave={async (patch) => { await saveCorrection({ admits: admitsFormMutation, dirty, notify: notifyFormState, request, saving, setConfirmClose, setIsSaving, setSettings }, patch); if (admitsNavigation()) { setVisible(false); } }} />}
+    </section>
+  ); }
+  return { content, notices, open };
 }

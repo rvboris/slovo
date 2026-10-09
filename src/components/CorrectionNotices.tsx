@@ -22,7 +22,7 @@ interface NoticeText {
 function noticeText(isSaving: boolean): NoticeText {
   let exitText = "Запрошен выход из «Слово». Есть несохранённые изменения корректировки.";
   if (isSaving) { exitText = "Запрошен выход из «Слово». Идёт сохранение изменений — дождитесь завершения."; }
-  let closeText = "Есть несохранённые изменения. Закрыть окно и потерять их?";
+  let closeText = "Есть несохранённые изменения. Вернуться и потерять их?";
   if (isSaving) { closeText = "Идёт сохранение изменений. Дождитесь завершения, чтобы не потерять их."; }
   return { closeText, exitText };
 }
@@ -59,15 +59,17 @@ export function CorrectionNotices({ noticeRef, exitPending, exitResolving, confi
   if (!visible) { return null; }
   const { closeText, exitText } = noticeText(isSaving);
   let text = closeText;
+  let saveLabel = "Сохранить и вернуться";
+  if (exitPending) { saveLabel = "Сохранить и выйти"; }
   if (exitPending) { text = exitText; }
-  let actions = noticeActions({ isSaving, onPrimary: onKeepEditing, onSecondary: onDiscardClose, primaryDisabled: false, primaryLabel: "Продолжить редактирование", secondaryLabel: "Закрыть без сохранения" });
+  let actions = noticeActions({ isSaving, onPrimary: onKeepEditing, onSecondary: onDiscardClose, primaryDisabled: false, primaryLabel: "Продолжить редактирование", secondaryLabel: "Отбросить изменения" });
   if (exitPending) {
     actions = noticeActions({ isSaving, onPrimary: onCancelExit, onSecondary: onApproveExit, primaryDisabled: exitResolving, primaryLabel: "Продолжить редактирование", secondaryLabel: "Выйти без сохранения" });
   }
   return (
     <section ref={noticeRef} tabIndex={-1} role="alert" className="mb-4 space-y-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
       <p>{text}</p>
-      <div className="flex flex-wrap gap-2">{actions}</div>
+      <div className="flex flex-wrap gap-2"><Button size="sm" disabled={isSaving || exitResolving} type="submit" form="correction-settings">{saveLabel}</Button>{actions}</div>
       {isSaving && <output className="block">Дождитесь завершения сохранения.</output>}
     </section>
   );

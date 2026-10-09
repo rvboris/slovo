@@ -5,6 +5,30 @@ import { CorrectionSetting } from "../../src/components/CorrectionSetting";
 import userEvent from "@testing-library/user-event";
 
 describe("CorrectionSetting", () => {
+  const fields = [
+    { example: "https://api.openai.com/v1", hint: "Адрес LLM-сервера, совместимого с OpenAI API", label: "Адрес API" },
+    { example: "gpt-4o-mini", hint: "Название модели, как у провайдера", label: "Модель" },
+    { example: "sk-…", hint: "Ключ провайдера; не нужен для локальных серверов (Ollama, LM Studio)", label: "API-ключ" },
+    { example: "Исправляй орфографию и пунктуацию…", hint: "Системная инструкция для модели корректировки", label: "Инструкция" },
+  ];
+  it.each(fields)("explains $label on hover and keyboard focus, dismisses with Escape, and provides examples", async (field) => {
+    const user = userEvent.setup();
+    const save = vi.fn();
+    render(<CorrectionSetting settings={settings} onSave={save} />);
+    expect(screen.getByPlaceholderText(field.example)).toBeInTheDocument();
+    const trigger = screen.getByRole("button", { name: `Подсказка: ${field.label}` });
+    await user.hover(trigger);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(field.hint);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await user.unhover(trigger);
+    act(() => { trigger.focus(); });
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(field.hint);
+    expect(trigger).toHaveAccessibleDescription(field.hint);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(save).not.toHaveBeenCalled();
+  });
   it("provides a full-width six-row prompt while preserving multiline editing and locks", async () => {
     const user = userEvent.setup();
     const save = vi.fn<() => Promise<void>>().mockResolvedValue();

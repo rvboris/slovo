@@ -32,7 +32,7 @@ export function StatusHeader({ kind, text, theme, onToggleTheme }: StatusHeaderP
   let themeIcon = <Moon className="h-4 w-4" />;
   if (theme === "dark") { themeLabel = "Включить светлую тему"; themeIcon = <Sun className="h-4 w-4" />; }
   return (
-    <header className="titlebar flex h-10 shrink-0 items-center border-b border-border/80 bg-background/95 pl-4 backdrop-blur-md">
+    <header className="titlebar flex h-10 shrink-0 items-center border-b border-border/80 bg-background/95 pl-6 backdrop-blur-md">
       <div data-tauri-drag-region className="flex h-full min-w-0 flex-1 items-center gap-3">
         <div className="relative isolate flex shrink-0 items-center gap-2">
           <div className="slovo-bloom" aria-hidden="true" />

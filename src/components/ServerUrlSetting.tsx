@@ -1,7 +1,8 @@
+import { FieldLabel } from "@/components/FieldLabel";
 import { Input } from "@/components/ui/input";
 import type { JSX } from "react";
-import { Label } from "@/components/ui/label";
 import type { ServerAvailability } from "@/hooks/useServerAvailability";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -26,6 +27,25 @@ function validateServerUrl(value: string): string | null {
   }
   return null;
 }
+
+const AVAILABILITY_VIEWS = {
+  available: {
+    dotClass: "bg-emerald-600 dark:bg-emerald-400",
+    text: "Соединение установлено",
+    textClass: "text-emerald-700 dark:text-emerald-400",
+  },
+  checking: {
+    dotClass: "bg-muted-foreground animate-pulse",
+    text: "Проверяем соединение…",
+    textClass: "text-muted-foreground",
+  },
+  idle: null,
+  unavailable: {
+    dotClass: "bg-destructive",
+    text: "Нет соединения",
+    textClass: "text-destructive",
+  },
+} as const;
 
 export function ServerUrlSetting({
   value,
@@ -61,31 +81,19 @@ export function ServerUrlSetting({
     }
   };
 
-  const availabilityView = {
-    available: {
-      dotClass: "bg-emerald-600 dark:bg-emerald-400",
-      text: "Соединение установлено",
-      textClass: "text-emerald-700 dark:text-emerald-400",
-    },
-    checking: {
-      dotClass: "bg-muted-foreground animate-pulse",
-      text: "Проверяем соединение…",
-      textClass: "text-muted-foreground",
-    },
-    idle: null,
-    unavailable: {
-      dotClass: "bg-destructive",
-      text: "Нет соединения",
-      textClass: "text-destructive",
-    },
-  }[availability];
+  const availabilityView = AVAILABILITY_VIEWS[availability];
 
   let describedBy = "server-help";
   if (availabilityView !== null) { describedBy = "server-help server-availability"; }
   if (error !== "") { describedBy = "server-help server-error"; }
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="space-y-2">
-      <Label htmlFor="server-url">Сервер распознавания</Label>
+      <FieldLabel
+        htmlFor="server-url"
+        label="Сервер распознавания"
+        hint="Адрес сервера распознавания (Whisper или совместимого API), например http://127.0.0.1:8072"
+      />
       <Input
         id="server-url"
         type="url"
@@ -128,5 +136,6 @@ export function ServerUrlSetting({
         </p>
       )}
     </div>
+    </TooltipProvider>
   );
 }

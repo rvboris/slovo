@@ -53,7 +53,7 @@ export function InputDeviceSetting({
             </SelectItem>
           ))}
           {isLoading && (
-            <output className="block px-2 py-1.5 text-sm text-muted-foreground">
+            <output className="block text-xs text-muted-foreground">
               Загрузка устройств…
             </output>
           )}

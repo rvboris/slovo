@@ -6,7 +6,6 @@ const bootstrap = vi.hoisted(() => ({ app: (): null => null, correction: (): nul
 vi.mock("react-dom/client", (): { createRoot: typeof bootstrap.createRoot } => ({ createRoot: bootstrap.createRoot }));
 vi.mock("@tauri-apps/api/window", (): { getCurrentWindow: () => { label: string } } => ({ getCurrentWindow: (): { label: string } => ({ label: bootstrap.label }) }));
 vi.mock("../../src/App", (): { App: typeof bootstrap.app } => ({ App: bootstrap.app }));
-vi.mock("../../src/CorrectionWindow", (): { CorrectionWindow: typeof bootstrap.correction } => ({ CorrectionWindow: bootstrap.correction }));
 beforeEach(() => { vi.resetModules(); vi.clearAllMocks(); bootstrap.createRoot.mockReturnValue({ render: bootstrap.render }); document.body.innerHTML = '<div id="root"></div>'; });
 afterEach(() => { document.body.innerHTML = ""; });
 describe("main bootstrap", () => {
@@ -19,8 +18,7 @@ describe("main bootstrap", () => {
     if (!isValidElement<{ children: ReactNode }>(candidate)) { throw new Error("Expected StrictMode element"); }
     const tree = candidate;
     expect(tree.type).toBe(StrictMode);
-    let expectedType = bootstrap.app;
-    if (label === "correction-settings") { expectedType = bootstrap.correction; }
+    const expectedType = bootstrap.app;
     const child = tree.props.children;
     if (!isValidElement(child)) { throw new Error("Expected application element"); }
     expect(child.type).toBe(expectedType);

@@ -2,19 +2,12 @@ import { LogicalSize, currentMonitor, getCurrentWindow } from "@tauri-apps/api/w
 import type { RefObject } from "react";
 import { useEffect } from "react";
 
-const GAP_PX = 20;
-const HIDDEN_HEIGHT = 0;
-const MINIMUM_HEIGHT = 0;
+const MINIMUM_HEIGHT = 560;
 const SIZE_EPSILON = 0.5;
 
 /* oxlint-disable max-statements, max-lines-per-function, max-depth */
 
-function measureExtra(el: { readonly offsetHeight: number }): number {
-  if (el.offsetHeight === HIDDEN_HEIGHT) { return HIDDEN_HEIGHT; }
-  return el.offsetHeight + GAP_PX;
-}
-
-/** Grows/shrinks the window to fit notifications while preserving its base height. */
+/** Grows/shrinks the window to fit all content, preserving its width. */
 export function useWindowAutoGrow(ref: RefObject<HTMLElement | null>): void {
   useEffect((): (() => void) | undefined => {
     const el = ref.current;
@@ -24,36 +17,33 @@ export function useWindowAutoGrow(ref: RefObject<HTMLElement | null>): void {
     const lifecycle: { disposed: boolean } = { disposed: false };
     let running = false;
     let blocked = false;
-    let desired = HIDDEN_HEIGHT;
-    let applied = HIDDEN_HEIGHT;
-    let baseHeight: number | null = null;
+    let desired = MINIMUM_HEIGHT;
+    let applied = MINIMUM_HEIGHT;
+    let firstMeasure = true;
 
     const pump = async (): Promise<void> => {
       if (running || lifecycle.disposed || blocked) { return; }
       running = true;
       try {
-        if (desired !== applied || baseHeight === null) {
+        if (desired !== applied || firstMeasure) {
           const target = desired;
           try {
             const [size, scale, monitor] = await Promise.all([
               win.innerSize(), win.scaleFactor(), currentMonitor(),
             ]);
             const { width, height } = size.toLogical(scale);
-            baseHeight ??= height - applied;
-            let bounded = target;
+            firstMeasure = false;
+            let bounded = Math.max(MINIMUM_HEIGHT, target);
             if (monitor !== null) {
               const maxHeight = monitor.workArea.size.height / scale;
-              bounded = Math.max(MINIMUM_HEIGHT, Math.min(target, maxHeight - baseHeight));
+              bounded = Math.min(bounded, maxHeight);
             }
-            const actualTarget = baseHeight + bounded;
-            if (Math.abs(height - actualTarget) < SIZE_EPSILON) {
-              applied = bounded;
-            } else {
+            const actualTarget = bounded;
+            if (Math.abs(height - actualTarget) >= SIZE_EPSILON) {
               await win.setSize(new LogicalSize(width, actualTarget));
-              const updatedSize = await win.innerSize();
-              applied = Math.max(MINIMUM_HEIGHT, updatedSize.toLogical(scale).height - baseHeight);
-              if (Math.abs(applied - bounded) >= SIZE_EPSILON && desired === target) { blocked = true; }
             }
+            // Capped targets settle: never re-pump merely because the uncapped request was larger.
+            applied = target;
           } catch {
             blocked = true;
           }
@@ -67,7 +57,7 @@ export function useWindowAutoGrow(ref: RefObject<HTMLElement | null>): void {
       }
     };
     const observe = (): void => {
-      desired = measureExtra(el);
+      desired = Math.max(MINIMUM_HEIGHT, el.offsetHeight);
       blocked = false;
       void pump();
     };

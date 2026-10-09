@@ -168,10 +168,12 @@ function useExitGuard(onError: (message: string) => void): ExitGuard {
   const { applyExitRequest, reconcile } = useExitRequests(guardRef, decide, setExitPending);
   const probeReady = useExitReadiness(guardRef, reconcile);
   const { admitsFormMutation, notifyFormState, resolveExit } = useExitControls(guardRef, decide);
-  return { admitsFormMutation, applyExitRequest, exitPending, exitResolving, notifyFormState, probeReady, resolveExit };
+  const admitsNavigation = useCallback((): boolean => guardRef.current.id === null && !guardRef.current.resolving && !guardRef.current.saving, []);
+  return { admitsFormMutation, admitsNavigation, applyExitRequest, exitPending, exitResolving, notifyFormState, probeReady, resolveExit };
 }
 
 interface ExitGuard {
+  readonly admitsNavigation: () => boolean;
   readonly exitPending: boolean;
   readonly exitResolving: boolean;
   readonly admitsFormMutation: () => boolean;

@@ -59,7 +59,7 @@ export function HotkeySetting({
         onClick={onHotkeyClick}
         disabled={hotkeyDisabled}
         className={cn(
-          "flex w-full min-h-[40px] flex-wrap items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors cursor-pointer",
+          "flex w-full h-9 min-h-[36px] flex-wrap items-center gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm transition-colors cursor-pointer",
           "hover:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           isCapturing && "border-ring bg-accent text-accent-foreground",
           hotkeyDisabled && "cursor-not-allowed opacity-50",

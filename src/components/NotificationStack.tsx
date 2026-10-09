@@ -1,7 +1,5 @@
 import { ErrorBanner } from "@/components/ErrorBanner";
 import type { JSX } from "react";
-import { useRef } from "react";
-import { useWindowAutoGrow } from "@/hooks/useWindowAutoGrow";
 
 interface NotificationStackProps {
   readonly operationalError?: string;
@@ -14,16 +12,13 @@ interface NotificationStackProps {
 }
 
 /**
- * Warning + error banners in one block that grows the window instead of
- * letting the settings below scroll (see useWindowAutoGrow).
+ * Warning and error banners displayed together.
  */
 export function NotificationStack({ warning, onDismissWarning, errorMessage, hasRetry, onRetry, operationalError = "", onDismissOperationalError }: NotificationStackProps): JSX.Element | null {
-  const ref = useRef<HTMLDivElement | null>(null);
-  useWindowAutoGrow(ref);
   const empty = warning === "" && errorMessage === "" && operationalError === "";
-  if (empty) { return <div ref={ref} className="hidden" aria-hidden="true" />; }
+  if (empty) { return null; }
   return (
-    <div ref={ref} className="flex flex-col gap-5">
+    <div className="flex flex-col gap-5">
       {warning !== "" && (
         <div role="alert" className="mx-6 flex shrink-0 items-start gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-800 dark:text-amber-200">
           <p className="min-w-0 flex-1 break-words">{warning}</p>

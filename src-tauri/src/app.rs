@@ -16,7 +16,7 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager};
 
-/// Pending app-exit request awaiting the correction window's decision.
+/// Pending app-exit request awaiting the main window's decision.
 ///
 /// The gate keeps a single pending request identified by a monotonic id.
 /// Stale resolutions are ignored; once approved no new dialog is created.
@@ -27,6 +27,7 @@ pub(crate) struct ExitGate {
 
 impl ExitGate {
     /// Current pending exit request id, if any.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn pending_id(&self) -> Option<u64> {
         self.state
             .lock()
@@ -44,7 +45,7 @@ struct ExitState {
 }
 
 enum ExitAction {
-    /// Ask the correction window about this request id.
+    /// Ask the main window about this request id.
     Ask(u64),
     /// Nothing to ask; exit now.
     Exit,
@@ -53,14 +54,14 @@ enum ExitAction {
 }
 
 impl ExitState {
-    fn request(&mut self, correction_window_open: bool) -> ExitAction {
+    fn request(&mut self, main_window_open: bool) -> ExitAction {
         if self.approved {
             return ExitAction::None;
         }
         if let Some(request_id) = self.pending_id {
             return ExitAction::Ask(request_id);
         }
-        if !correction_window_open {
+        if !main_window_open {
             self.approved = true;
             return ExitAction::Exit;
         }
@@ -82,18 +83,9 @@ impl ExitState {
             _ => false,
         }
     }
-
-    fn destroyed(&mut self) -> bool {
-        if self.pending_id.is_some() && !self.approved {
-            self.pending_id = None;
-            self.approved = true;
-            return true;
-        }
-        false
-    }
 }
 
-/// Asks the correction window for a decision; exits immediately when absent.
+/// Asks the main window for a decision; exits immediately when absent.
 ///
 /// Idempotent: repeated requests re-notify the same pending id.
 pub(crate) fn request_exit(app: &AppHandle) {
@@ -101,7 +93,7 @@ pub(crate) fn request_exit(app: &AppHandle) {
         app.exit(0);
         return;
     };
-    let window = app.get_webview_window("correction-settings");
+    let window = app.get_webview_window("main");
     let action = {
         let mut state = gate
             .state
@@ -111,13 +103,15 @@ pub(crate) fn request_exit(app: &AppHandle) {
     };
     match action {
         ExitAction::Ask(request_id) => {
-            if let Some(window) = window {
+            if let Some(window) = &window {
                 let _ = window.unminimize();
                 let _ = window.show();
                 let _ = window.set_focus();
             }
-            if let Err(error) = app.emit_to("correction-settings", "slovo://exit-requested", request_id) {
-                eprintln!("[slovo] cannot notify correction window about exit: {error}");
+            if window.is_some() {
+                if let Err(error) = app.emit_to("main", "slovo://exit-requested", request_id) {
+                    eprintln!("[slovo] cannot notify main window about exit: {error}");
+                }
             }
         }
         ExitAction::Exit => app.exit(0),
@@ -135,18 +129,22 @@ pub(crate) fn exit_approved(app: &AppHandle) -> bool {
     })
 }
 
-/// Applies the correction window's decision for a pending exit request.
+/// Applies the main window's decision for a pending exit request.
 ///
-/// Only the correction window may resolve, and only the current pending id
-/// acts; stale or duplicated resolutions are safe no-ops.
+/// Only the main window may resolve, and only the current pending id acts;
+/// stale or duplicated resolutions are safe no-ops.
+fn exit_sender_authorized(sender_label: &str) -> bool {
+    sender_label == "main"
+}
+
 pub(crate) fn resolve_exit(
     app: &AppHandle,
     sender_label: &str,
     request_id: u64,
     approve: bool,
 ) -> Result<(), String> {
-    if sender_label != "correction-settings" {
-        return Err("exit decisions are only accepted from the correction window".into());
+    if !exit_sender_authorized(sender_label) {
+        return Err("exit decisions are only accepted from the main window".into());
     }
     let gate = app
         .try_state::<ExitGate>()
@@ -162,24 +160,6 @@ pub(crate) fn resolve_exit(
         app.exit(0);
     }
     Ok(())
-}
-
-/// Re-checks the gate when the correction window is destroyed while a
-/// request is pending: the window closed on its own, the pending exit wins.
-pub(crate) fn on_correction_destroyed(app: &AppHandle) {
-    let Some(gate) = app.try_state::<ExitGate>() else {
-        return;
-    };
-    let exit_now = {
-        let mut state = gate
-            .state
-            .lock()
-            .expect("slovo exit gate lock poisoned");
-        state.destroyed()
-    };
-    if exit_now {
-        app.exit(0);
-    }
 }
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -341,7 +321,6 @@ pub fn run() {
             crate::commands::set_hotkey_capture_active,
             crate::commands::update_settings,
             crate::commands::update_correction_settings,
-            crate::commands::open_correction_settings,
             crate::commands::correction_exit_ready,
             crate::commands::resolve_exit_request,
             crate::commands::get_status,
@@ -365,13 +344,6 @@ pub fn run() {
                     // exit gate so an unsaved correction draft is kept.
                     api.prevent_close();
                     request_exit(app);
-                }
-                tauri::RunEvent::WindowEvent {
-                    label,
-                    event: tauri::WindowEvent::Destroyed,
-                    ..
-                } if label == "correction-settings" => {
-                    on_correction_destroyed(app);
                 }
                 tauri::RunEvent::ExitRequested { api, .. } => {
                     if exit_approved(app) {
@@ -417,17 +389,17 @@ pub fn run() {
 }
 #[cfg(test)]
 mod tests {
-    use super::{ExitAction, ExitState};
+    use super::{exit_sender_authorized, ExitAction, ExitState};
 
     #[test]
-    fn exits_immediately_without_correction_window() {
+    fn exits_immediately_without_main_window() {
         let mut state = ExitState::default();
         assert!(matches!(state.request(false), ExitAction::Exit));
         assert!(matches!(state.request(false), ExitAction::None), "already approved");
     }
 
     #[test]
-    fn asks_window_and_repeats_same_id() {
+    fn asks_main_window_and_repeats_same_id() {
         let mut state = ExitState::default();
         let ExitAction::Ask(first) = state.request(true) else {
             panic!("expected Ask");
@@ -458,10 +430,17 @@ mod tests {
     }
 
     #[test]
-    fn destroyed_while_pending_completes_exit_once() {
+    fn only_main_is_authorized_to_resolve_exit() {
+        assert!(exit_sender_authorized("main"));
+        assert!(!exit_sender_authorized("correction-settings"));
+        assert!(!exit_sender_authorized("recording-overlay"));
+    }
+
+    #[test]
+    fn main_exists_while_pending_is_resolved_once() {
         let mut state = ExitState::default();
-        let _ = state.request(true);
-        assert!(state.destroyed());
-        assert!(!state.destroyed(), "already approved");
+        let ExitAction::Ask(id) = state.request(true) else { panic!() };
+        assert!(!state.resolve(id, false));
+        assert!(matches!(state.request(true), ExitAction::Ask(next) if next != id));
     }
 }

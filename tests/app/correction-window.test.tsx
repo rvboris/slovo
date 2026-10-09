@@ -1,8 +1,16 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deferred, settings } from "../components/helpers";
-import { CorrectionWindow } from "../../src/CorrectionWindow";
+import type { JSX } from "react";
+import { useCorrectionScreen } from "../../src/hooks/use-correction-screen";
+import { useEffect } from "react";
 import userEvent from "@testing-library/user-event";
+
+function CorrectionWindow(): JSX.Element {
+  const { content, notices, open } = useCorrectionScreen();
+  useEffect(() => { void open(); }, [open]);
+  return <>{notices}{content ?? <p>Главный экран</p>}</>;
+}
 
 const api = vi.hoisted((): { close: ReturnType<typeof vi.fn>; destroy: ReturnType<typeof vi.fn>; invoke: ReturnType<typeof vi.fn>; listen: ReturnType<typeof vi.fn>; onCloseRequested: ReturnType<typeof vi.fn>; unsubscribe: ReturnType<typeof vi.fn>; unsubscribeClose: ReturnType<typeof vi.fn<() => void>> } => ({ close: vi.fn(), destroy: vi.fn(), invoke: vi.fn(), listen: vi.fn(), onCloseRequested: vi.fn(), unsubscribe: vi.fn(), unsubscribeClose: vi.fn<() => void>() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: api.invoke }));
@@ -56,7 +64,7 @@ describe("correction window", () => {
     expect(ready).toHaveBeenCalled();
   });
 
-  it("retries loading and unsubscribes both native listeners", async () => {
+  it("retries loading and unsubscribes settings and exit listeners", async () => {
     let failedLoad = false;
     api.invoke.mockImplementation(async (command: string): Promise<unknown> => {
       await Promise.resolve();
@@ -73,25 +81,25 @@ describe("correction window", () => {
     view.unmount();
     expect(unlistenSettings).toHaveBeenCalledTimes(2);
     expect(unlistenExit).toHaveBeenCalledTimes(2);
-    expect(api.unsubscribeClose).toHaveBeenCalledTimes(2);
+    expect(api.onCloseRequested).not.toHaveBeenCalled();
   });
 
-  it("preserves a draft on settings events, cancels dirty close, then destroys only after confirmation", async () => {
+  it("preserves a draft on settings events, stays on dirty Back, then discards on confirmation", async () => {
     const user = userEvent.setup();
     render(<CorrectionWindow />);
     await user.type(await screen.findByLabelText(/^Модель/u), "draft");
     api.invoke.mockResolvedValue({ ...settings, llmModel: "external" });
     await act(async () => { settingsChanged(); await Promise.resolve(); });
     expect(screen.getByLabelText(/^Модель/u)).toHaveValue("draft");
-    await user.click(screen.getByRole("button", { name: "Закрыть окно" }));
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
     expect(screen.getByRole("alert")).toHaveFocus();
     expect(api.destroy).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Продолжить редактирование" }));
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(screen.getByLabelText(/^Модель/u)).toHaveValue("draft");
-    await user.click(screen.getByRole("button", { name: "Закрыть окно" }));
-    await user.click(screen.getByRole("button", { name: "Закрыть без сохранения" }));
-    expect(api.destroy).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    await user.click(screen.getByRole("button", { name: "Отбросить изменения" }));
+    expect(screen.getByText("Главный экран")).toBeInTheDocument();
   });
 
   it("blocks discard while saving, retries failed saves and closes cleanly after success", async () => {
@@ -102,18 +110,14 @@ describe("correction window", () => {
     api.invoke.mockReturnValueOnce(pending.promise);
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
     expect(api.invoke).toHaveBeenLastCalledWith("update_correction_settings", { correction: { llmApiKey: null, llmModel: "draft", llmPrompt: null, llmServerUrl: null } });
-    await user.click(screen.getByRole("button", { name: "Закрыть окно" }));
-    expect(screen.getByText("Дождитесь завершения сохранения.")).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "Закрыть без сохранения" }));
+    await user.click(screen.getByRole("button", { name: "Отмена" }));
+    expect(screen.getByRole("button", { name: "Отмена" })).toBeDisabled();
     expect(api.destroy).not.toHaveBeenCalled();
     await act(async () => { pending.reject(new Error("offline")); await Promise.resolve(); });
     expect(screen.getByLabelText(/^Модель/u)).toHaveValue("draft");
-    await user.click(screen.getByRole("button", { name: "Продолжить редактирование" }));
     api.invoke.mockResolvedValueOnce({ ...settings, llmModel: "draft" });
     await user.click(screen.getByRole("button", { name: "Сохранить" }));
-    expect(await screen.findByRole("button", { name: "Сохранено" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "Закрыть окно" }));
-    expect(api.destroy).toHaveBeenCalledOnce();
+    expect(await screen.findByText("Главный экран")).toBeInTheDocument();
   });
 
   it("ignores a stale rejected settings load after a newer settings update", async () => {
@@ -144,48 +148,50 @@ describe("correction window", () => {
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
-  it("reports native close failure instead of silently losing the window", async () => {
-    render(<CorrectionWindow />);
-    await screen.findByLabelText("Адрес API");
-    api.destroy.mockRejectedValueOnce(new Error("denied"));
-    await userEvent.setup().click(screen.getByRole("button", { name: "Закрыть окно" }));
-    expect(screen.getByRole("alert")).toHaveTextContent("Не удалось закрыть окно");
-  });
 
-  it("cleans up a late close-request registration after unmount", async () => {
-    const pending = deferred<() => void>();
-    api.onCloseRequested.mockImplementationOnce(async (): Promise<() => void> => { await Promise.resolve(); return pending.promise; });
-    const view = render(<CorrectionWindow />);
-    await waitFor(() => { expect(api.onCloseRequested).toHaveBeenCalledOnce(); });
-    view.unmount();
-    await act(async () => { pending.resolve(api.unsubscribeClose); await Promise.resolve(); });
-    await waitFor(() => { expect(api.unsubscribeClose).toHaveBeenCalledOnce(); });
-    expect(api.destroy).not.toHaveBeenCalled();
-  });
+});
 
-  it("recovers from native registration failure without destroying the window", async () => {
-    api.listen.mockRejectedValueOnce(new Error("listen failed"));
-    render(<CorrectionWindow />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось подключить события окна");
-    expect(api.destroy).not.toHaveBeenCalled();
-  });
+it("returns without edits and keeps the exit handshake alive on the main screen", async () => {
+  const user = userEvent.setup();
+  render(<CorrectionWindow />);
+  await screen.findByLabelText(/^Модель/u);
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith("correction_exit_ready"); });
+  await user.click(screen.getByRole("button", { name: "Отмена" }));
+  expect(screen.getByText("Главный экран")).toBeInTheDocument();
+  act(() => { listeners.get("slovo://exit-requested")?.({ payload: 81 }); });
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith("resolve_exit_request", { decision: "approve", requestId: 81 }); });
+  expect(api.onCloseRequested).not.toHaveBeenCalled();
+  expect(api.destroy).not.toHaveBeenCalled();
+});
 
-  it("retains dirty drafts when discard fails and retries successfully", async () => {
-    api.destroy.mockReset().mockResolvedValue(null);
-    const user = userEvent.setup();
-    render(<CorrectionWindow />);
-    const model = await screen.findByLabelText(/^Модель/u);
-    await user.clear(model);
-    await user.type(model, "draft");
-    await user.click(screen.getByRole("button", { name: "Закрыть окно" }));
-    api.destroy.mockRejectedValueOnce(new Error("denied"));
-    await user.click(screen.getByRole("button", { name: "Закрыть без сохранения" }));
-    expect(screen.getByLabelText(/^Модель/u)).toHaveValue("draft");
-    expect(screen.getAllByRole("alert")[0]).toHaveTextContent("Не удалось закрыть окно");
-    api.destroy.mockResolvedValueOnce(null);
-    await user.click(screen.getByRole("button", { name: "Закрыть без сохранения" }));
-    expect(api.destroy).toHaveBeenCalledTimes(2);
+it("saves from the dirty Back notice and returns to main", async () => {
+  const user = userEvent.setup();
+  render(<CorrectionWindow />);
+  await user.type(await screen.findByLabelText(/^Модель/u), "draft");
+  await user.click(screen.getByRole("button", { name: "Отмена" }));
+  await user.click(screen.getByRole("button", { name: "Сохранить и вернуться" }));
+  expect(await screen.findByText("Главный экран")).toBeInTheDocument();
+});
+
+it("prioritizes an exit arriving during save over returning to main", async () => {
+  const user = userEvent.setup();
+  render(<CorrectionWindow />);
+  await user.type(await screen.findByLabelText(/^Модель/u), "draft");
+  const pending = deferred<typeof settings>();
+  api.invoke.mockImplementation(async (command: string): Promise<unknown> => {
+    await Promise.resolve();
+    if (command === "update_correction_settings") { return pending.promise; }
+    return null;
   });
+  await user.click(screen.getByRole("button", { name: "Сохранить" }));
+  act(() => { listeners.get("slovo://exit-requested")?.({ payload: 82 }); });
+  expect(screen.getByRole("button", { name: "Отмена" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Выйти без сохранения" })).toBeDisabled();
+  await act(async () => { pending.resolve({ ...settings, llmModel: "draft" }); await pending.promise; });
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith("resolve_exit_request", { decision: "approve", requestId: 82 }); });
+  expect(screen.queryByText("Главный экран")).not.toBeInTheDocument();
+  expect(screen.getByLabelText(/^Модель/u)).toHaveValue("draft");
+});
 
   it("releases a subscription that resolves after unmount", async () => {
     const pending = deferred<() => void>();
@@ -197,4 +203,15 @@ describe("correction window", () => {
     expect(api.onCloseRequested).not.toHaveBeenCalled();
     expect(api.invoke).not.toHaveBeenCalled();
   });
+
+it("reconnects failed exit registration before announcing readiness", async () => {
+  const user = userEvent.setup();
+  api.listen.mockRejectedValueOnce(new Error("offline"));
+  render(<CorrectionWindow />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("Не удалось подключить события окна");
+  expect(api.invoke).not.toHaveBeenCalledWith("correction_exit_ready");
+  await user.click(screen.getByRole("button", { name: "Повторить" }));
+  await waitFor(() => { expect(api.invoke).toHaveBeenCalledWith("correction_exit_ready"); });
+  expect(listeners.has("slovo://exit-requested")).toBe(true);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
