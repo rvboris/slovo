@@ -362,6 +362,41 @@ mod tests {
     }
 
     #[test]
+    fn classify_open_error_counts_only_permission_denied() {
+        let mut denied = ScanSummary::default();
+        classify_open_error(
+            &io::Error::new(io::ErrorKind::PermissionDenied, "denied"),
+            &mut denied,
+        );
+        assert_eq!(
+            denied,
+            ScanSummary {
+                keyboards: 1,
+                readable: 0,
+                permission_denied: 1
+            }
+        );
+
+        let mut other = ScanSummary::default();
+        classify_open_error(
+            &io::Error::new(io::ErrorKind::NotFound, "missing"),
+            &mut other,
+        );
+        assert_eq!(other, ScanSummary::default());
+    }
+
+    #[test]
+    fn normal_removal_accepts_expected_device_errors_only() {
+        for errno in [libc::ENOENT, libc::ENODEV, libc::EIO] {
+            assert!(is_normal_removal(&io::Error::from_raw_os_error(errno)));
+        }
+        assert!(!is_normal_removal(&io::Error::from_raw_os_error(
+            libc::EACCES
+        )));
+        assert!(!is_normal_removal(&io::Error::other("no errno")));
+    }
+
+    #[test]
     fn primary_mapping_contains_every_chord_code_and_not_escape() {
         let codes = [
             2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,

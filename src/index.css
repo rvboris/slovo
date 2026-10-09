@@ -25,6 +25,7 @@
   --input: oklch(0.20 0.004 250 / 0.20);    /* inputs read clearly */
   --ring: var(--accent-vivid);
   --radius: 0.5625rem;
+  --mode-selected: oklch(0.55 0.22 280);   /* white text >= 4.5:1 in both themes */
   --accent-vivid: oklch(0.55 0.22 280);     /* electric indigo */
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   --ease-out-fast: cubic-bezier(0.22, 1, 0.36, 1);
@@ -85,8 +86,10 @@ body {
   overflow: hidden;
 }
 
-/* Opaque base on html so any pseudo-elements can layer above it. */
-html {
+/* Opaque base on html so any pseudo-elements can layer above it.
+   :root, not html — must out-specify index.html's dark-mode pre-app
+   :root background or a light theme on a dark-OS looks dark. */
+:root {
   background: var(--background);
 }
 

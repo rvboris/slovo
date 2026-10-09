@@ -1,160 +1,206 @@
-import { useState, useRef, useCallback } from "react";
+import { DEFAULT_SETTINGS, getErrorMessage, normalizeSettings } from '@/lib/types';
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Settings } from '@/lib/types';
 import { invoke } from "@tauri-apps/api/core";
-import {
-  type Settings,
-  type SaveKind,
-  DEFAULT_SETTINGS,
-  normalizeSettings,
-  getErrorMessage,
-} from "@/lib/types";
+import { listen } from "@tauri-apps/api/event";
+
+const SAVE_DELAY_MS = 400;
+const INITIAL_REVISION = 0;
+const REVISION_STEP = 1;
+
+async function acceptReportedFailure(operation: Readonly<Promise<void>>): Promise<void> {
+  try { await operation; }
+  catch {
+    // SaveSettings already presents the failure; detached callers must consume it.
+  }
+}
+
+function validServerUrl(value: string): string | null {
+  try {
+    const trimmed = value.trim();
+    const url = new URL(trimmed);
+    if (url.protocol === "http:" || url.protocol === "https:") { return trimmed; }
+  } catch {
+    // Incomplete edits are not persisted.
+  }
+  return null;
+}
 
 interface UseSettingsOptions {
   onError: (message: string, retry?: () => Promise<void>) => void;
   onClearError: () => void;
 }
 
-export function useSettings({ onError, onClearError }: UseSettingsOptions) {
-  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
-  const [isLoaded, setIsLoaded] = useState(false);
-  const [saveState, setSaveState] = useState<{ text: string; kind: SaveKind }>({
-    text: "",
-    kind: "idle",
-  });
+interface SettingsResult {
+  isLoaded: boolean;
+  loadSettings: () => Promise<void>;
+  saveMessage: string;
+  saveServerNow: (value: string) => void;
+  saveSettings: (patch: Readonly<Partial<Settings>>) => Promise<void>;
+  scheduleServerSave: (value: string) => void;
+  setSettings: Dispatch<SetStateAction<Settings>>;
+  settings: Settings;
+  updateSetting: <Key extends keyof Settings>(key: Key, value: Settings[Key]) => void;
+}
+type SettingsData = Omit<SettingsResult, "saveServerNow" | "scheduleServerSave" | "updateSetting">;
 
-  const persistedRef = useRef<Settings>({ ...DEFAULT_SETTINGS });
-  const revisionRef = useRef(0);
-  const queueRef = useRef<Promise<void>>(Promise.resolve());
-  const serverTimerRef = useRef<number | undefined>(undefined);
+type SettingsRuntime = Readonly<{
+  persistedRef: RefObject<Settings>; queueRef: RefObject<Promise<void>>; revisionRef: RefObject<number>;
+  setSettings: Dispatch<SetStateAction<Settings>>; onError: UseSettingsOptions["onError"];
+}>;
+function reportSaveFailure(error: unknown, retry: () => Promise<void>, options: Pick<SettingsRuntime, "onError" | "persistedRef" | "setSettings"> & Readonly<{ setSaveMessage: Dispatch<SetStateAction<string>> }>): void {
+  options.setSettings({ ...options.persistedRef.current });
+  options.setSaveMessage("");
+  options.onError(getErrorMessage(error, "Не удалось сохранить настройки."), retry);
+}
+async function persistSettings({ previous, requested, revision, persistedRef, revisionRef, setSettings, setSaveMessage, onError, retry }: SettingsRuntime & Readonly<{ previous: Readonly<Promise<void>>; requested: Readonly<Partial<Settings>>; revision: number; setSaveMessage: Dispatch<SetStateAction<string>>; retry: () => Promise<void> }>): Promise<void> {
 
-  const setSaveStateHelper = useCallback(
-    (text: string, kind: SaveKind = "idle") => {
-      setSaveState({ text, kind });
-    },
-    [],
-  );
-
-  const saveSettings = useCallback(
-    (nextSettings: Settings): Promise<void> => {
-      const requested = { ...nextSettings };
-      const revision = ++revisionRef.current;
-      setSettings(requested);
-      setSaveStateHelper("Сохраняю…", "saving");
-      onClearError();
-
-      const operation = queueRef.current.then(async () => {
+        await previous;
         try {
           const saved = normalizeSettings(
             await invoke<Settings>("update_settings", {
-              settings: requested,
+              // Merge inside the queue so delayed saves cannot overwrite newer fields.
+              settings: { ...persistedRef.current, ...requested },
             }),
           );
           persistedRef.current = saved;
 
           if (revision === revisionRef.current) {
             setSettings(saved);
-            setSaveStateHelper("Изменения сохранены", "saved");
-            window.setTimeout(() => {
-              if (
-                revision === revisionRef.current &&
-                saveState.text === "Изменения сохранены"
-              ) {
-                setSaveStateHelper("");
-              }
-            }, 1800);
+            setSaveMessage("Настройки сохранены");
           }
         } catch (error) {
           if (revision === revisionRef.current) {
-            setSettings({ ...persistedRef.current });
-            setSaveStateHelper("Не удалось сохранить", "error");
-            onError(
-              getErrorMessage(error, "Не удалось сохранить настройки."),
-              () => saveSettings(requested),
-            );
+            reportSaveFailure(error, retry, { onError, persistedRef, setSaveMessage, setSettings });
           }
           throw error;
         }
-      });
 
-      queueRef.current = operation.catch(() => undefined);
-      return operation;
-    },
-    [onError, onClearError, setSaveStateHelper, saveState.text],
+}
+
+async function saveSettingsOperation(patch: Readonly<Partial<Settings>>, { onClearError, onError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings }: SettingsRuntime & Readonly<{ onClearError: () => void; setSaveMessage: Dispatch<SetStateAction<string>> }>): Promise<void> {
+      const requested = { ...patch };
+      revisionRef.current += REVISION_STEP;
+      const revision = revisionRef.current;
+      setSettings((current) => ({ ...current, ...requested }));
+      setSaveMessage("Сохраняю настройки…");
+      onClearError();
+
+      const previous = queueRef.current;
+      const operation = persistSettings({ onError, persistedRef, previous, queueRef, requested, retry: async (): Promise<void> => { await saveSettingsOperation(requested, { onClearError, onError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings }); }, revision, revisionRef, setSaveMessage, setSettings });
+
+      queueRef.current = (async (): Promise<void> => {
+        try { await operation; } catch {
+      // Each save reports its own error; keep the queue usable.
+ }
+      })();
+      await operation;
+    }
+
+function useSettingsSave({ onClearError, onError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings }: SettingsRuntime & Readonly<{ onClearError: () => void; setSaveMessage: Dispatch<SetStateAction<string>> }>): SettingsData["saveSettings"] {
+  const saveSettings = useCallback(
+    async (patch: Readonly<Partial<Settings>>): Promise<void> => { await saveSettingsOperation(patch, { onClearError, onError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings }); },
+    [onError, onClearError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings],
   );
 
-  const loadSettings = useCallback(async (): Promise<void> => {
+
+ return saveSettings;
+}
+async function loadPersistedSettings(queue: Readonly<Promise<void>>): Promise<Settings> {
+  await queue;
+  return normalizeSettings(await invoke<Settings>("get_settings"));
+}
+async function loadSettingsOperation({ loadRevisionRef, onError, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings }: SettingsRuntime & Readonly<{ loadRevisionRef: RefObject<number>; setIsLoaded: Dispatch<SetStateAction<boolean>> }>): Promise<void> {
+    const snapshot = { loadRevision: loadRevisionRef.current + REVISION_STEP, revision: revisionRef.current };
+    loadRevisionRef.current = snapshot.loadRevision;
     try {
-      const loaded = normalizeSettings(
-        await invoke<Settings>("get_settings"),
-      );
+      const loaded = await loadPersistedSettings(queueRef.current);
+      if (snapshot.revision !== revisionRef.current || snapshot.loadRevision !== loadRevisionRef.current) {return;}
       setSettings(loaded);
       persistedRef.current = { ...loaded };
       setIsLoaded(true);
     } catch (error) {
       onError(
         getErrorMessage(error, "Не удалось загрузить настройки."),
-        loadSettings,
+        async (): Promise<void> => { await loadSettingsOperation({ loadRevisionRef, onError, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings }); },
       );
     }
-  }, [onError]);
+  }
 
-  const scheduleServerSave = useCallback(
-    (value: string) => {
-      if (serverTimerRef.current) window.clearTimeout(serverTimerRef.current);
+function useSettingsLoad({ loadRevisionRef, onError, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings }: SettingsRuntime & Readonly<{ loadRevisionRef: RefObject<number>; setIsLoaded: Dispatch<SetStateAction<boolean>> }>): () => Promise<void> {
+  const loadSettings = useCallback(async (): Promise<void> => { await loadSettingsOperation({ loadRevisionRef, onError, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings }); }, [onError, loadRevisionRef, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings]);
 
-      serverTimerRef.current = window.setTimeout(() => {
-        serverTimerRef.current = undefined;
-        const trimmed = value.trim();
-        if (!trimmed) return;
-        try {
-          const url = new URL(trimmed);
-          if (url.protocol !== "http:" && url.protocol !== "https:") return;
-        } catch {
-          return;
-        }
-        void saveSettings({ ...settings, serverUrl: trimmed }).catch(
-          () => undefined,
-        );
-      }, 400);
-    },
-    [saveSettings, settings],
-  );
 
-  const saveServerNow = useCallback(
-    (value: string) => {
-      if (serverTimerRef.current) window.clearTimeout(serverTimerRef.current);
-      serverTimerRef.current = undefined;
-      const trimmed = value.trim();
-      if (!trimmed || trimmed === settings.serverUrl) return;
+ return loadSettings;
+}
+
+function useSettingsData({ onError, onClearError }: Readonly<UseSettingsOptions>): SettingsData {
+  const [settings, setSettings] = useState<Settings>({ ...DEFAULT_SETTINGS });
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [saveMessage, setSaveMessage] = useState("");
+
+  const persistedRef = useRef<Settings>({ ...DEFAULT_SETTINGS });
+  const revisionRef = useRef(INITIAL_REVISION);
+  const loadRevisionRef = useRef(INITIAL_REVISION);
+  const queueRef = useRef<Promise<void>>(Promise.resolve());
+
+  const saveSettings = useSettingsSave({ onClearError, onError, persistedRef, queueRef, revisionRef, setSaveMessage, setSettings });
+  const loadSettings = useSettingsLoad({ loadRevisionRef, onError, persistedRef, queueRef, revisionRef, setIsLoaded, setSettings });
+
+  return { isLoaded, loadSettings, saveMessage, saveSettings, setSettings, settings };
+}
+
+function useSettingsEvents(loadSettings: () => Promise<void>, onError: UseSettingsOptions["onError"]): void {
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    async function subscribe(): Promise<void> {
       try {
-        const url = new URL(trimmed);
-        if (url.protocol !== "http:" && url.protocol !== "https:") return;
+        const dispose = await listen("slovo://settings-changed", (): void => {
+          if (!cancelled) { void loadSettings(); }
+        });
+        if (cancelled) { dispose(); } else { unlisten = dispose; }
       } catch {
-        return;
+        if (!cancelled) { onError("Не удалось подключить обновление настроек."); }
       }
-      void saveSettings({ ...settings, serverUrl: trimmed }).catch(
-        () => undefined,
-      );
-    },
-    [saveSettings, settings],
-  );
+    }
+    void subscribe();
+    return (): void => { cancelled = true; unlisten?.(); };
+  }, [loadSettings, onError]);
+
+}
+
+function useSettingEdits(saveSettings: SettingsData["saveSettings"]): Pick<SettingsResult, "saveServerNow" | "scheduleServerSave" | "updateSetting"> {
+  const serverTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+  const saveServerNow = useCallback((value: string): void => {
+    if (serverTimerRef.current !== null) { globalThis.clearTimeout(serverTimerRef.current); }
+    serverTimerRef.current = null;
+    const serverUrl = validServerUrl(value);
+    if (serverUrl !== null) { void acceptReportedFailure(saveSettings({ serverUrl })); }
+  }, [saveSettings]);
+
+  const scheduleServerSave = useCallback((value: string): void => {
+    if (serverTimerRef.current !== null) { globalThis.clearTimeout(serverTimerRef.current); }
+    serverTimerRef.current = globalThis.setTimeout((): void => { saveServerNow(value); }, SAVE_DELAY_MS);
+  }, [saveServerNow]);
 
   const updateSetting = useCallback(
-    <K extends keyof Settings>(key: K, value: Settings[K]) => {
-      const next = { ...settings, [key]: value };
-      void saveSettings(next).catch(() => undefined);
+    <Key extends keyof Settings>(key: Key, value: Settings[Key]) => {
+      const next = { [key]: value };
+      void acceptReportedFailure(saveSettings(next));
     },
-    [saveSettings, settings],
+    [saveSettings],
   );
 
-  return {
-    settings,
-    isLoaded,
-    saveState,
-    loadSettings,
-    saveSettings,
-    scheduleServerSave,
-    saveServerNow,
-    updateSetting,
-    setSettings,
-  };
+  return { saveServerNow, scheduleServerSave, updateSetting };
 }
+
+function useSettings(options: Readonly<UseSettingsOptions>): SettingsResult {
+  const data = useSettingsData(options);
+  useSettingsEvents(data.loadSettings, options.onError);
+  const edits = useSettingEdits(data.saveSettings);
+  return { ...data, ...edits };
+}
+
+export { useSettings };

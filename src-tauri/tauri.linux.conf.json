@@ -6,6 +6,13 @@
   },
   "bundle": {
     "externalBin": ["binaries/slovo-input-helper"],
-    "resources": ["resources/72-slovo-input-helper.rules"]
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/lib/udev/rules.d/72-slovo-input-helper.rules": "resources/72-slovo-input-helper.rules"
+        },
+        "postInstallScript": "debian/postinst"
+      }
+    }
   }
 }

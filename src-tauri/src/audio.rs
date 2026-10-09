@@ -10,6 +10,7 @@ const TARGET_RATE: u32 = 16_000;
 const MAX_DURATION: Duration = Duration::from_mins(2);
 const VAD_MIN_RECORDING: Duration = Duration::from_millis(400);
 const VAD_SILENCE: Duration = Duration::from_millis(900);
+const VAD_INITIAL_SPEECH_TIMEOUT: Duration = Duration::from_secs(5);
 const VAD_THRESHOLD_MULTIPLIER: f32 = 3.0;
 const VAD_MIN_THRESHOLD: f32 = 0.012;
 
@@ -339,6 +340,10 @@ impl Vad {
     }
 
     fn observe(&mut self, samples: &[f32]) -> bool {
+        self.observe_at(samples, Instant::now())
+    }
+
+    fn observe_at(&mut self, samples: &[f32], now: Instant) -> bool {
         if samples.is_empty() {
             return false;
         }
@@ -352,17 +357,20 @@ impl Vad {
             self.noise_rms = rms.mul_add(0.02, self.noise_rms * 0.98);
         }
         let speech = rms > (self.noise_rms * VAD_THRESHOLD_MULTIPLIER).max(VAD_MIN_THRESHOLD);
+        if !self.speech_seen && now.duration_since(self.started) >= VAD_INITIAL_SPEECH_TIMEOUT {
+            return true;
+        }
         if speech {
             self.speech_seen = true;
             self.silence_since = None;
         } else if self.speech_seen {
-            self.silence_since.get_or_insert_with(Instant::now);
+            self.silence_since.get_or_insert(now);
         }
-        self.started.elapsed() >= VAD_MIN_RECORDING
+        now.duration_since(self.started) >= VAD_MIN_RECORDING
             && self.speech_seen
             && self
                 .silence_since
-                .is_some_and(|at| at.elapsed() >= VAD_SILENCE)
+                .is_some_and(|at| now.duration_since(at) >= VAD_SILENCE)
     }
 }
 
@@ -481,6 +489,45 @@ mod tests {
     use super::*;
 
     #[test]
+    fn vad_initial_silence_stops_at_five_seconds() {
+        let start = Instant::now();
+        let mut vad = Vad::new(start);
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(4_999)));
+        assert!(vad.observe_at(&[0.0], start + VAD_INITIAL_SPEECH_TIMEOUT));
+    }
+
+    #[test]
+    fn vad_speech_before_deadline_disables_initial_timeout_and_tracks_silence() {
+        let start = Instant::now();
+        let mut vad = Vad::new(start);
+        assert!(!vad.observe_at(&[0.2], start + Duration::from_secs(4)));
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(4_100)));
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(4_999)));
+        assert!(vad.observe_at(&[0.0], start + Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn vad_resumed_speech_resets_post_speech_silence() {
+        let start = Instant::now();
+        let mut vad = Vad::new(start);
+        vad.observe_at(&[0.2], start);
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(500)));
+        assert!(!vad.observe_at(&[0.2], start + Duration::from_millis(800)));
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(900)));
+        assert!(!vad.observe_at(&[0.0], start + Duration::from_millis(1_799)));
+        assert!(vad.observe_at(&[0.0], start + Duration::from_millis(1_800)));
+    }
+
+    #[test]
+    fn vad_empty_buffers_do_not_count_as_silence_or_timeout_observations() {
+        let start = Instant::now();
+        let mut vad = Vad::new(start);
+        assert!(!vad.observe_at(&[], start + VAD_INITIAL_SPEECH_TIMEOUT));
+        assert!(!vad.observe_at(&[], start + Duration::from_secs(10)));
+        assert!(vad.observe_at(&[0.0], start + Duration::from_secs(10)));
+    }
+
+    #[test]
     fn identifies_obvious_non_microphone_capture_endpoints() {
         for name in [
             "Monitor of Built-in Audio Analog Stereo",
@@ -511,6 +558,40 @@ mod tests {
                 "expected {name:?} to be preserved"
             );
         }
+    }
+
+    #[test]
+    fn conversion_ignores_incomplete_frames_and_zero_channels() {
+        assert!(interleaved_to_mono(&[1_i16, 2], 0, f32::from).is_empty());
+        assert_eq!(
+            interleaved_to_mono(&[2_i16, 6, 99], 2, f32::from),
+            vec![4.0]
+        );
+        assert!(interleaved_to_mono(&[1_i16], 2, f32::from).is_empty());
+    }
+
+    #[test]
+    fn resampling_handles_degenerate_rates_and_clamps_last_frame() {
+        for (source, target) in [(0, 16_000), (16_000, 0)] {
+            assert!(resample_linear(&[1.0], source, target).is_empty());
+        }
+        assert!(resample_linear(&[], 1, 2).is_empty());
+        assert_eq!(resample_linear(&[0.25], 1, 4), vec![0.25; 4]);
+        assert_eq!(resample_linear(&[0.0, 1.0], 2, 4), vec![0.0, 0.5, 1.0, 1.0]);
+        assert_eq!(
+            resample_linear(&[0.25, -0.5], 16_000, 16_000),
+            vec![0.25, -0.5]
+        );
+    }
+
+    #[test]
+    fn wav_clips_out_of_range_samples_and_supports_empty_recordings() {
+        let bytes = wav_bytes(&[-2.0, -1.0, 0.0, 1.0, 2.0], 16_000).unwrap();
+        let mut reader = hound::WavReader::new(Cursor::new(bytes)).unwrap();
+        let samples: Vec<i16> = reader.samples().collect::<Result<_, _>>().unwrap();
+        assert_eq!(samples, vec![-32767, -32767, 0, 32767, 32767]);
+        let empty = hound::WavReader::new(Cursor::new(wav_bytes(&[], 16_000).unwrap())).unwrap();
+        assert_eq!(empty.duration(), 0);
     }
 
     #[test]

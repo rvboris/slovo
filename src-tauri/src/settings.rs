@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, io::Write, path::PathBuf};
 use tauri::{AppHandle, Manager};
 use url::Url;
 
@@ -15,7 +15,7 @@ pub enum TriggerType {
     AutoVad,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct Settings {
     pub hotkey: String,
@@ -25,6 +25,61 @@ pub struct Settings {
     pub trigger_type: TriggerType,
     #[serde(default, alias = "input_device")]
     pub input_device: Option<String>,
+    pub llm_server_url: Option<String>,
+    pub llm_model: Option<String>,
+    pub llm_api_key: Option<String>,
+    pub llm_prompt: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[allow(clippy::struct_field_names)] // Fields match the existing frontend settings contract.
+pub struct CorrectionSettings {
+    pub llm_server_url: Option<String>,
+    pub llm_model: Option<String>,
+    pub llm_api_key: Option<String>,
+    pub llm_prompt: Option<String>,
+}
+
+impl CorrectionSettings {
+    pub fn apply(self, settings: &mut Settings) -> Result<(), String> {
+        let clean =
+            |value: Option<String>| value.map(|s| s.trim().to_owned()).filter(|s| !s.is_empty());
+        let url = clean(self.llm_server_url);
+        let model = clean(self.llm_model);
+        let prompt = clean(self.llm_prompt);
+        if let Some(value) = &url {
+            let parsed = Url::parse(value).map_err(|_| "Некорректный адрес API")?;
+            if !matches!(parsed.scheme(), "http" | "https")
+                || parsed.host_str().is_none()
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+            {
+                return Err("Укажите HTTP(S)-адрес без логина и пароля".into());
+            }
+            if model.is_none() || prompt.is_none() {
+                return Err("Для корректировки укажите модель и инструкцию".into());
+            }
+        }
+        settings.llm_server_url = url;
+        settings.llm_model = model;
+        settings.llm_api_key = clean(self.llm_api_key);
+        settings.llm_prompt = prompt;
+        Ok(())
+    }
+}
+
+pub fn preserve_correction(next: &mut Settings, current: &Settings) {
+    next.llm_server_url.clone_from(&current.llm_server_url);
+    next.llm_model.clone_from(&current.llm_model);
+    next.llm_api_key.clone_from(&current.llm_api_key);
+    next.llm_prompt.clone_from(&current.llm_prompt);
+}
+
+impl std::fmt::Debug for Settings {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Settings").finish_non_exhaustive()
+    }
 }
 
 impl Default for Settings {
@@ -34,6 +89,10 @@ impl Default for Settings {
             server_url: DEFAULT_SERVER_URL.into(),
             trigger_type: TriggerType::Toggle,
             input_device: None,
+            llm_server_url: None,
+            llm_model: None,
+            llm_api_key: None,
+            llm_prompt: None,
         }
     }
 }
@@ -86,7 +145,24 @@ fn save_to_path(path: &std::path::Path, settings: &Settings) -> Result<(), Strin
     fs::create_dir_all(parent).map_err(|error| error.to_string())?;
     let bytes = serde_json::to_vec_pretty(settings).map_err(|error| error.to_string())?;
     let temporary = path.with_extension("json.tmp");
-    fs::write(&temporary, bytes).map_err(|error| error.to_string())?;
+    let mut options = fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    // Remove a leftover temporary file without following a possible symlink.
+    match fs::remove_file(&temporary) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error.to_string()),
+    }
+    let mut file = options
+        .open(&temporary)
+        .map_err(|error| error.to_string())?;
+    file.write_all(&bytes).map_err(|error| error.to_string())?;
+    file.sync_all().map_err(|error| error.to_string())?;
     fs::rename(temporary, path).map_err(|error| error.to_string())
 }
 
@@ -103,6 +179,107 @@ pub fn save(app: &AppHandle, settings: &Settings) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn separate_windows_preserve_each_others_fields() {
+        let mut current = Settings::default();
+        let mut stale_main = current.clone();
+        let correction = || CorrectionSettings {
+            llm_server_url: Some("https://example.invalid/v1".into()),
+            llm_model: Some("model".into()),
+            llm_api_key: Some("secret".into()),
+            llm_prompt: Some("Исправь текст".into()),
+        };
+        correction().apply(&mut current).unwrap();
+        stale_main.server_url = "http://localhost:9000".into();
+        preserve_correction(&mut stale_main, &current);
+        assert_eq!(stale_main.llm_api_key, current.llm_api_key);
+        assert_eq!(stale_main.llm_prompt, current.llm_prompt);
+        correction().apply(&mut stale_main).unwrap();
+        assert_eq!(stale_main.server_url, "http://localhost:9000");
+        let mut invalid = correction();
+        invalid.llm_model = None;
+        assert!(invalid.apply(&mut stale_main).is_err());
+        let mut disabled = correction();
+        disabled.llm_server_url = Some(" ".into());
+        disabled.llm_model = None;
+        disabled.apply(&mut stale_main).unwrap();
+        assert!(stale_main.llm_server_url.is_none());
+        assert_eq!(stale_main.server_url, "http://localhost:9000");
+    }
+
+    #[test]
+    fn rejected_correction_update_is_transactional() {
+        let mut settings = Settings {
+            llm_api_key: Some("existing-secret".into()),
+            ..Settings::default()
+        };
+        let before = settings.clone();
+        for url in [
+            "file:///tmp/api",
+            "https://user:password@example.test",
+            "not a url",
+        ] {
+            let update = CorrectionSettings {
+                llm_server_url: Some(url.into()),
+                llm_model: Some("model".into()),
+                llm_api_key: Some("replacement-secret".into()),
+                llm_prompt: Some("prompt".into()),
+            };
+            assert!(update.apply(&mut settings).is_err());
+            assert_eq!(settings, before);
+        }
+    }
+
+    #[test]
+    fn debug_never_contains_settings_values() {
+        let settings = Settings {
+            server_url: "https://private-host.test".into(),
+            llm_api_key: Some("private-token".into()),
+            llm_prompt: Some("private-prompt".into()),
+            input_device: Some("private-device".into()),
+            ..Settings::default()
+        };
+        assert_eq!(format!("{settings:?}"), "Settings { .. }");
+    }
+
+    #[test]
+    fn settings_reject_unknown_fields_and_url_suffix_metadata() {
+        assert!(serde_json::from_str::<Settings>(r#"{"llmApiKeey":"secret"}"#).is_err());
+        assert!(
+            serde_json::from_str::<CorrectionSettings>(r#"{"serverUrl":"https://host"}"#).is_err()
+        );
+        for url in ["https://host?token=secret", "https://host/#fragment"] {
+            assert!(normalize_server_url(url).is_err());
+            assert!(transcription_url(url).is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn saving_replaces_temp_symlink_without_touching_target() {
+        use std::os::unix::fs::{symlink, PermissionsExt};
+        let directory =
+            std::env::temp_dir().join(format!("slovo-symlink-test-{}", std::process::id()));
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("settings.json");
+        let victim = directory.join("victim");
+        fs::write(&victim, b"do not overwrite").unwrap();
+        symlink(&victim, path.with_extension("json.tmp")).unwrap();
+        let settings = Settings {
+            llm_api_key: Some("secret".into()),
+            ..Settings::default()
+        };
+        save_to_path(&path, &settings).unwrap();
+        assert_eq!(fs::read(&victim).unwrap(), b"do not overwrite");
+        assert_eq!(load_from_path(&path).unwrap(), settings);
+        assert_eq!(
+            fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        assert!(!path.with_extension("json.tmp").exists());
+        fs::remove_dir_all(directory).unwrap();
+    }
 
     #[test]
     fn normalizes_and_appends_endpoint() {
@@ -129,6 +306,7 @@ mod tests {
             server_url: "http://127.0.0.1:8072".into(),
             trigger_type: TriggerType::Hold,
             input_device: None,
+            ..Settings::default()
         };
         let json = serde_json::to_value(&settings).unwrap();
         assert_eq!(json["hotkey"], "Ctrl+Backquote");
@@ -148,6 +326,12 @@ mod tests {
         assert_eq!(settings.server_url, "http://localhost:8072");
         assert_eq!(settings.trigger_type, TriggerType::AutoVad);
         assert_eq!(settings.input_device.as_deref(), Some("Built-in Mic"));
+        assert!(settings.llm_server_url.is_none());
+        let json = serde_json::to_value(&settings).unwrap();
+        for key in ["llmServerUrl", "llmModel", "llmApiKey", "llmPrompt"] {
+            assert!(json[key].is_null());
+        }
+        assert_eq!(serde_json::from_value::<Settings>(json).unwrap(), settings);
     }
 
     #[test]
@@ -167,9 +351,24 @@ mod tests {
             server_url: "https://example.test:8072".into(),
             trigger_type: TriggerType::AutoVad,
             input_device: Some("USB Mic".into()),
+            llm_server_url: Some("https://example.test/v1".into()),
+            llm_model: Some("test-model".into()),
+            llm_api_key: Some("private-key".into()),
+            llm_prompt: Some("fix text".into()),
         };
         save_to_path(&path, &settings).unwrap();
         assert_eq!(load_from_path(&path).unwrap(), settings);
+        assert!(!format!("{settings:?}").contains("private-key"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+            save_to_path(&path, &settings).unwrap();
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         let _ = fs::remove_dir_all(directory);
     }
 

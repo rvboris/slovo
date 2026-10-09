@@ -1,6 +1,14 @@
 :root {
   font-family: "Aptos", "Segoe UI Variable Text", "SF Pro Text", system-ui, sans-serif;
   font-synthesis: none;
+  --pill-bg-a: rgba(34, 36, 43, 0.92);
+  --pill-bg-b: rgba(18, 20, 25, 0.94);
+  --pill-border: rgba(255, 255, 255, 0.13);
+  --pill-fg: #f4f5f7;
+  --accent: oklch(0.68 0.19 285);
+  --danger: oklch(0.68 0.21 25);
+  --ease-spring: cubic-bezier(0.34, 1.3, 0.64, 1);
+  --ease-out-fast: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
@@ -23,14 +31,16 @@ body {
   padding: 2px;
 }
 
+/* The pill animates its own width (168px <-> 44px) inside the fixed
+   transparent window; the window itself only resizes for error text. */
 .recording-indicator {
   width: 168px;
   height: 44px;
   display: grid;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid var(--pill-border);
   border-radius: 22px;
-  background: linear-gradient(145deg, rgba(34, 36, 43, 0.92), rgba(18, 20, 25, 0.94));
-  color: #f4f5f7;
+  background: linear-gradient(145deg, var(--pill-bg-a), var(--pill-bg-b));
+  color: var(--pill-fg);
   /* ponytail: no outer box-shadow — the window clips it and on
      XWayland/WebKitGTK the clipped shadow composites against an opaque
      canvas, producing a dark halo.  Add back if the compositor changes. */
@@ -40,6 +50,17 @@ body {
   -webkit-user-select: none;
   position: relative;
   isolation: isolate;
+  transition:
+    width 380ms var(--ease-spring),
+    border-radius 380ms var(--ease-spring),
+    background 240ms ease,
+    border-color 240ms ease;
+}
+
+/* Correcting: elegant collapse to a compact spinner circle. */
+.recording-indicator.is-correcting {
+  width: 44px;
+  border-radius: 50%;
 }
 
 /* Sound-reactive canvas: scrolling amplitude waveform drawn behind content.
@@ -75,113 +96,181 @@ body {
   display: none;
 }
 
+/* Entry choreography: every state fades in and settles up 4px. */
+.indicator-state:not([hidden]) {
+  animation: state-in 280ms var(--ease-out-fast) both;
+}
+
+@keyframes state-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .recording-state {
-  display: grid;
-  place-items: center;
+  position: relative;
+  display: flex;
+  padding: 0 14px;
+  gap: 8px;
 }
 
 .recording-row {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
 }
 
 .recording-dot {
   width: 8px;
   height: 8px;
-  flex: 0 0 auto;
+  flex: none;
   border-radius: 50%;
-  background: #ff4d5e;
-  box-shadow: 0 0 0 4px rgba(255, 77, 94, 0.16);
-  animation: recording-pulse 1.4s ease-in-out infinite;
+  background: var(--danger);
+  animation: dot-pulse 1.6s ease-in-out infinite;
 }
 
-#recording-time {
-  min-width: 41px;
-  color: #f4f5f7;
-  font-size: 13px;
-  font-weight: 650;
+@keyframes dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 oklch(0.68 0.21 25 / 0.45);
+  }
+  50% {
+    box-shadow: 0 0 0 5px oklch(0.68 0.21 25 / 0);
+  }
+}
+
+.recording-state time {
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.02em;
-  line-height: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
+/* Processing: spinner + label. In correcting mode the label fades out
+   while the pill itself collapses (see .is-correcting above). */
+.processing-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+}
+
+.is-result .processing-spinner { display: none; }
+.is-result #processing-label { max-width: 300px; white-space: normal; line-height: 1.2; }
+
+.processing-spinner {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 15%, var(--accent));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  animation: processing-spin 0.9s linear infinite;
+}
+
+@keyframes processing-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+#processing-label {
+  font-size: 13.5px;
+  font-weight: 550;
+  letter-spacing: 0.1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity 160ms ease, transform 220ms var(--ease-spring);
+}
+
+.recording-indicator.is-correcting #processing-label {
+  opacity: 0;
+  transform: scale(0.8);
+}
+
+/* Error: mark + message; recording.ts widens the Tauri window so the
+   message fits, ellipsis is the fallback ceiling. */
 .error-state {
-  display: grid;
-  place-items: center;
-  color: #fff4f4;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 12px;
 }
 
 .error-mark {
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
+  flex: none;
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: #ff5b68;
-  color: #241316;
-  font-size: 11px;
+  background: oklch(0.68 0.21 25 / 0.18);
+  color: oklch(0.82 0.17 25);
+  font-size: 12px;
   font-weight: 800;
   line-height: 1;
 }
 
+.error-message {
+  font-size: 13.5px;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: oklch(0.92 0.03 25);
+}
+
 .recording-indicator.is-error {
-  border-color: rgba(255, 104, 116, 0.34);
-  background: linear-gradient(145deg, rgba(67, 30, 36, 0.98), rgba(31, 19, 23, 0.98));
+  border-color: oklch(0.68 0.21 25 / 0.4);
+  background: linear-gradient(145deg, oklch(0.28 0.05 25 / 0.94), oklch(0.19 0.04 25 / 0.95));
+  /* Attention grab: quick horizontal shake + red glow flash, then the
+     tinted pill above remains as the steady state. */
+  animation:
+    error-shake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97),
+    error-glow 900ms ease-out;
 }
 
-.recording-indicator.is-loading {
-  visibility: hidden;
+@keyframes error-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-5px); }
+  30% { transform: translateX(4px); }
+  45% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+  75% { transform: translateX(-1px); }
 }
 
-@keyframes recording-pulse {
-  0%,
+@keyframes error-glow {
+  0% {
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 0 0 0 oklch(0.68 0.21 25 / 0.55),
+      inset 0 0 18px oklch(0.68 0.21 25 / 0.35);
+  }
   100% {
-    box-shadow: 0 0 0 3px rgba(255, 77, 94, 0.14);
-    transform: scale(0.94);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.06),
+      0 0 0 12px oklch(0.68 0.21 25 / 0),
+      inset 0 0 18px oklch(0.68 0.21 25 / 0);
   }
-  50% {
-    box-shadow: 0 0 0 5px rgba(255, 77, 94, 0.22);
-    transform: scale(1);
-  }
-}
-
-@media (prefers-color-scheme: light) {
-  .recording-indicator {
-    border-color: rgba(25, 30, 42, 0.12);
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(244, 245, 248, 0.98));
-    color: #20232b;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
-  }
-
-  #recording-time {
-    color: #20232b;
-  }
-
-  .recording-indicator.is-error {
-    border-color: rgba(190, 42, 58, 0.25);
-    background: linear-gradient(145deg, rgba(255, 244, 245, 0.99), rgba(255, 229, 232, 0.99));
-  }
-
-  .error-state {
-    color: #731d29;
-  }
-
-  .error-mark {
-    background: #cf3344;
-    color: #ffffff;
-  }
-
-
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .recording-dot {
+  .recording-indicator,
+  #processing-label,
+  .indicator-state:not([hidden]) {
+    transition: none;
     animation: none;
   }
-
-  /* The waveform canvas still renders but recording.ts freezes the scroll
-     and only re-paints on level change — see REDUCED_MOTION in recording.ts. */
 }

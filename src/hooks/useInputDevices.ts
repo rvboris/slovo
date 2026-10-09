@@ -1,109 +1,125 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { InputDevice } from '@/lib/types';
+import { getErrorMessage } from '@/lib/types';
 import { invoke } from "@tauri-apps/api/core";
-import { type InputDevice, getErrorMessage } from "@/lib/types";
 
 interface DeviceOption {
-  value: string;
-  label: string;
+  readonly value: string;
+  readonly label: string;
 }
 
 const defaultOption: DeviceOption = {
-  value: "__default__",
   label: "Системное по умолчанию",
+  value: "__default__",
 };
 
 let cachedDevices: InputDevice[] | null = null;
 let sharedRequest: Promise<InputDevice[]> | null = null;
 
-function getInputDevices(force: boolean): Promise<InputDevice[]> {
-  if (sharedRequest) return sharedRequest;
-  if (!force && cachedDevices) return Promise.resolve(cachedDevices);
+ async function getInputDevices(force: boolean): Promise<InputDevice[]> {
+  if (sharedRequest) {
+    const devices = await sharedRequest;
+    return devices;
+  }
+  if (!force && cachedDevices) {return cachedDevices;}
 
   const request = invoke<InputDevice[]>("list_input_devices");
-  const trackedRequest = request
-    .then((devices) => {
+  const trackedRequest = (async (): Promise<InputDevice[]> => {
+    try {
+      const devices = await request;
       cachedDevices = devices;
       return devices;
-    })
-    .finally(() => {
-      if (sharedRequest === trackedRequest) sharedRequest = null;
-    });
+    } finally {
+      // No other request can start while sharedRequest is pending.
+      sharedRequest = null;
+    }
+  })();
 
   sharedRequest = trackedRequest;
   return trackedRequest;
+}
+async function updateDevices(force: boolean, mounted: Readonly<RefObject<boolean>>, setDevices: Dispatch<SetStateAction<InputDevice[] | null>>): Promise<void> {
+  const devices = await getInputDevices(force);
+  if (mounted.current) { setDevices(devices); }
+}
+function reportDeviceError(error: unknown, mounted: boolean, onError: (message: string) => void): void {
+  if (mounted) { onError(getErrorMessage(error, "Не удалось получить список устройств ввода.")); }
+}
+function useLoad({ loadingRef, devices, setIsLoading, mounted, setDevices, onError }: Readonly<{ loadingRef: RefObject<boolean>; devices: readonly InputDevice[] | null; setIsLoading: Dispatch<SetStateAction<boolean>>; mounted: RefObject<boolean>; setDevices: Dispatch<SetStateAction<InputDevice[] | null>>; onError: (message: string) => void }>): (force?: boolean) => Promise<void> {
+ const load = useCallback(
+    async (force = false): Promise<void> => {
+      if (loadingRef.current || (!force && devices !== null)) {return;}
+
+      loadingRef.current = true;
+      setIsLoading(true);
+      await (async (): Promise<void> => {
+        try {
+          await updateDevices(force, mounted, setDevices);
+        } catch (error) {
+          reportDeviceError(error, mounted.current, onError);
+        }
+      })().finally((): void => {
+        loadingRef.current = false;
+        if (mounted.current) {setIsLoading(false);}
+      });
+    },
+    [devices, onError, loadingRef, setIsLoading, mounted, setDevices],
+  );
+ return load;
+}
+
+function unloadedDeviceOptions(currentDevice: string | null): DeviceOption[] {
+  const options = [defaultOption];
+  if (currentDevice !== null && currentDevice !== "") { options.push({ label: currentDevice, value: currentDevice }); }
+  return options;
+}
+function useDeviceOptions(currentDevice: string | null, devices: readonly InputDevice[] | null): DeviceOption[] {
+  const options = useMemo(() => {
+    const opts: DeviceOption[] = [defaultOption];
+    if (devices === null) { return unloadedDeviceOptions(currentDevice); }
+
+    const names = devices.map(device => device.name.trim()).filter(name => name !== "");
+    opts.push(...names.map(name => ({ label: name, value: name })));
+    if (currentDevice !== null && currentDevice !== "" && !names.includes(currentDevice)) {
+      opts.push({
+        label: `Недоступно: ${currentDevice}`,
+        value: currentDevice,
+      });
+    }
+    return opts;
+  }, [currentDevice, devices]);
+  return options;
 }
 
 export function useInputDevices(
   currentDevice: string | null,
   onError: (message: string) => void,
-) {
+): {
+  isLoading: boolean;
+  load: (force?: boolean) => Promise<void>;
+  options: DeviceOption[];
+  reload: () => Promise<void>;
+} {
   const [devices, setDevices] = useState<InputDevice[] | null>(
     () => cachedDevices,
   );
   const [isLoading, setIsLoading] = useState(false);
   const mounted = useRef(true);
-  const loading = useRef(false);
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
-    return () => {
+    return (): void => {
       mounted.current = false;
     };
   }, []);
 
-  const load = useCallback(
-    async (force = false): Promise<void> => {
-      if (loading.current || (!force && devices !== null)) return;
+  const load = useLoad({ devices, loadingRef, mounted, onError, setDevices, setIsLoading });
 
-      loading.current = true;
-      setIsLoading(true);
-      try {
-        const nextDevices = await getInputDevices(force);
-        if (mounted.current) setDevices(nextDevices);
-      } catch (error) {
-        if (mounted.current) {
-          onError(
-            getErrorMessage(
-              error,
-              "Не удалось получить список устройств ввода.",
-            ),
-          );
-        }
-      } finally {
-        loading.current = false;
-        if (mounted.current) setIsLoading(false);
-      }
-    },
-    [devices, onError],
-  );
+  const reload = useCallback(async (): Promise<void> => { await load(true); }, [load]);
 
-  const reload = useCallback(() => load(true), [load]);
+  const options = useDeviceOptions(currentDevice, devices);
 
-  const options = useMemo(() => {
-    const opts: DeviceOption[] = [defaultOption];
-    if (devices === null) {
-      if (currentDevice) {
-        opts.push({ value: currentDevice, label: currentDevice });
-      }
-      return opts;
-    }
-
-    let found = !currentDevice;
-    for (const device of devices) {
-      const name = device.name.trim();
-      if (!name) continue;
-
-      opts.push({ value: name, label: name });
-      if (name === currentDevice) found = true;
-    }
-    if (!found && currentDevice) {
-      opts.push({
-        value: currentDevice,
-        label: `Недоступно: ${currentDevice}`,
-      });
-    }
-    return opts;
-  }, [currentDevice, devices]);
-
-  return { options, load, reload, isLoading };
+  return { isLoading, load, options, reload };
 }
