@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/rvboris/slovo/compare/slovo-v0.6.0...slovo-v0.7.0) (2026-10-09)
+
+
+### Features
+
+* inline correction settings and polished main window ([d27bd3b](https://github.com/rvboris/slovo/commit/d27bd3b2dffe5a850f2a59348677b8da755e20d8))
+* inline correction settings and polished main window ([cacc596](https://github.com/rvboris/slovo/commit/cacc596d000f3160841a2fae62c016a6cb15fe16))
+
 ## [0.6.0](https://github.com/rvboris/slovo/compare/slovo-v0.5.0...slovo-v0.6.0) (2026-08-30)
 
 
