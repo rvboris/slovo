@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/rvboris/slovo/compare/slovo-v0.7.0...slovo-v0.8.0) (2026-10-10)
+
+
+### Miscellaneous Chores
+
+* migrate to biome formatter alongside oxlint, reformat sources ([e24101f](https://github.com/rvboris/slovo/commit/e24101fdbaab9728587d69e9078129b33ae2e11c))
+
 ## [0.7.0](https://github.com/rvboris/slovo/compare/slovo-v0.6.0...slovo-v0.7.0) (2026-10-09)
 
 
