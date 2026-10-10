@@ -13,25 +13,32 @@ import { useStatus } from "@/hooks/useStatus";
 import { useTheme } from "@/hooks/useTheme";
 
 function correctionStatus(loaded: boolean, url: string | null): string {
-  if (!loaded) { return "Загрузка…"; }
-  if (url !== null && url !== "") { return "Включена"; }
+  if (!loaded) {
+    return "Загрузка…";
+  }
+  if (url !== null && url !== "") {
+    return "Включена";
+  }
   return "Выключена";
 }
 
-function useAppErrors(): Readonly<{ errorMessage: string; hasRetry: boolean; showError: (message: string, retry?: () => Promise<void>) => void; hideError: () => void; retryLastAction: () => Promise<void> }> {
+function useAppErrors(): Readonly<{
+  errorMessage: string;
+  hasRetry: boolean;
+  showError: (message: string, retry?: () => Promise<void>) => void;
+  hideError: () => void;
+  retryLastAction: () => Promise<void>;
+}> {
   // Error state
   const [errorMessage, setErrorMessage] = useState("");
   const lastFailedActionRef = useRef<(() => Promise<void>) | null>(null);
   const [hasRetry, setHasRetry] = useState(false);
 
-  const showError = useCallback(
-    (message: string, retry?: () => Promise<void>) => {
-      setErrorMessage(message);
-      lastFailedActionRef.current = retry ?? null;
-      setHasRetry(retry !== undefined);
-    },
-    [],
-  );
+  const showError = useCallback((message: string, retry?: () => Promise<void>) => {
+    setErrorMessage(message);
+    lastFailedActionRef.current = retry ?? null;
+    setHasRetry(retry !== undefined);
+  }, []);
 
   const hideError = useCallback(() => {
     setErrorMessage("");
@@ -39,7 +46,9 @@ function useAppErrors(): Readonly<{ errorMessage: string; hasRetry: boolean; sho
 
   const retryLastAction = useCallback(async () => {
     const action = lastFailedActionRef.current;
-    if (!action) {return;}
+    if (!action) {
+      return;
+    }
     try {
       await action();
     } catch {
@@ -50,7 +59,7 @@ function useAppErrors(): Readonly<{ errorMessage: string; hasRetry: boolean; sho
   return { errorMessage, hasRetry, hideError, retryLastAction, showError };
 }
 
-export function App() : JSX.Element | null {
+export function App(): JSX.Element | null {
   const { theme, toggleTheme } = useTheme();
 
   const { errorMessage, hasRetry, showError, hideError, retryLastAction } = useAppErrors();
@@ -67,10 +76,7 @@ export function App() : JSX.Element | null {
     updateSetting,
   } = useSettings({ onClearError: hideError, onError: showError });
 
-  const serverAvailability = useServerAvailability(
-    settings.serverUrl,
-    settingsLoaded,
-  );
+  const serverAvailability = useServerAvailability(settings.serverUrl, settingsLoaded);
 
   // Status
   const status = useStatus(showError);
@@ -109,7 +115,9 @@ export function App() : JSX.Element | null {
   const handleHotkeySave = useCallback(
     (hotkey: string): void => {
       async function saveHotkey(): Promise<void> {
-        try { await saveSettings({ hotkey }); } catch {
+        try {
+          await saveSettings({ hotkey });
+        } catch {
           // The settings hook reports this failure with a retry action.
         }
       }
@@ -129,7 +137,7 @@ export function App() : JSX.Element | null {
   useEffect(() => {
     void loadSettings();
     void loadShortcutStatus();
-      }, [loadSettings, loadShortcutStatus]);
+  }, [loadSettings, loadShortcutStatus]);
 
   const handleVerify = useCallback(() => {
     permission.close();
@@ -152,5 +160,34 @@ export function App() : JSX.Element | null {
 
   const correctionLabel = correctionStatus(settingsLoaded, settings.llmServerUrl);
   const correction = useCorrectionScreen();
-  return <AppView correctionContent={correction.content} correctionNotices={correction.notices} theme={theme} toggleTheme={toggleTheme} status={status} settings={settings} settingsLoaded={settingsLoaded} hotkey={hotkey} shortcutStatus={shortcutStatus} retryShortcutBackend={retryShortcutBackend} permission={permission} serverAvailability={serverAvailability} scheduleServerSave={scheduleServerSave} saveServerNow={saveServerNow} deviceOptions={deviceOptions} areInputDevicesLoading={areInputDevicesLoading} loadInputDevices={loadInputDevices} handleDeviceChange={handleDeviceChange} handleTriggerChange={handleTriggerChange} correctionLabel={correctionLabel} openCorrection={correction.open} errorMessage={errorMessage} hasRetry={hasRetry} retryLastAction={retryLastAction} handleVerify={handleVerify} saveMessage={saveMessage} />;
+  return (
+    <AppView
+      correctionContent={correction.content}
+      correctionNotices={correction.notices}
+      theme={theme}
+      toggleTheme={toggleTheme}
+      status={status}
+      settings={settings}
+      settingsLoaded={settingsLoaded}
+      hotkey={hotkey}
+      shortcutStatus={shortcutStatus}
+      retryShortcutBackend={retryShortcutBackend}
+      permission={permission}
+      serverAvailability={serverAvailability}
+      scheduleServerSave={scheduleServerSave}
+      saveServerNow={saveServerNow}
+      deviceOptions={deviceOptions}
+      areInputDevicesLoading={areInputDevicesLoading}
+      loadInputDevices={loadInputDevices}
+      handleDeviceChange={handleDeviceChange}
+      handleTriggerChange={handleTriggerChange}
+      correctionLabel={correctionLabel}
+      openCorrection={correction.open}
+      errorMessage={errorMessage}
+      hasRetry={hasRetry}
+      retryLastAction={retryLastAction}
+      handleVerify={handleVerify}
+      saveMessage={saveMessage}
+    />
+  );
 }

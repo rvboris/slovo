@@ -51,13 +51,7 @@ interface ShortcutBackendStatusPayload {
   readonly setupAvailable?: boolean;
 }
 
-type ShortcutViewState =
-  | "idle"
-  | "preparing"
-  | "active"
-  | "warning"
-  | "error"
-  | "neutral";
+type ShortcutViewState = "idle" | "preparing" | "active" | "warning" | "error" | "neutral";
 
 interface ShortcutPermissionSetup {
   readonly supported?: boolean;
@@ -89,20 +83,29 @@ const triggerDescriptions: Record<TriggerType, string> = {
 };
 
 function normalizeTriggerType(value: string): TriggerType {
-  if (value === "hold" || value === "auto-vad") {return value;}
+  if (value === "hold" || value === "auto-vad") {
+    return value;
+  }
   return "toggle";
 }
 
 function normalizeSettings(
-  value: Readonly<Partial<Settings> & {
-    input_device?: string | null;
-    server_url?: string;
-    trigger_type?: string;
-  }> | null | undefined,
+  value:
+    | Readonly<
+        Partial<Settings> & {
+          input_device?: string | null;
+          server_url?: string;
+          trigger_type?: string;
+        }
+      >
+    | null
+    | undefined,
 ): Settings {
   const raw = value ?? {};
   let hotkey = raw.hotkey?.trim() ?? "";
-  if (hotkey === "") { ({ hotkey } = DEFAULT_SETTINGS); }
+  if (hotkey === "") {
+    ({ hotkey } = DEFAULT_SETTINGS);
+  }
 
   return {
     hotkey,
@@ -112,15 +115,17 @@ function normalizeSettings(
     llmPrompt: raw.llmPrompt ?? null,
     llmServerUrl: raw.llmServerUrl ?? null,
     serverUrl: (raw.serverUrl ?? raw.server_url ?? "").trim(),
-    triggerType: normalizeTriggerType(
-      raw.triggerType ?? raw.trigger_type ?? "toggle",
-    ),
+    triggerType: normalizeTriggerType(raw.triggerType ?? raw.trigger_type ?? "toggle"),
   };
 }
 
 function getErrorMessage(error: unknown, fallback: string): string {
-  if (typeof error === "string" && error.trim() !== "") {return error;}
-  if (error instanceof Error && error.message !== "") {return error.message;}
+  if (typeof error === "string" && error.trim() !== "") {
+    return error;
+  }
+  if (error instanceof Error && error.message !== "") {
+    return error.message;
+  }
   return fallback;
 }
 
@@ -128,15 +133,29 @@ const INITIAL_SECONDS = 0;
 const SECONDS_PER_MINUTE = 60;
 const CLOCK_FIELD_WIDTH = 2;
 function formatElapsed(seconds = INITIAL_SECONDS): string {
-  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE).toString().padStart(CLOCK_FIELD_WIDTH, "0");
-  const remainder = Math.floor(seconds % SECONDS_PER_MINUTE).toString().padStart(CLOCK_FIELD_WIDTH, "0");
+  const minutes = Math.floor(seconds / SECONDS_PER_MINUTE)
+    .toString()
+    .padStart(CLOCK_FIELD_WIDTH, "0");
+  const remainder = Math.floor(seconds % SECONDS_PER_MINUTE)
+    .toString()
+    .padStart(CLOCK_FIELD_WIDTH, "0");
   return `${minutes}:${remainder}`;
 }
 
 export {
-  DEFAULT_SETTINGS, formatElapsed, getErrorMessage, normalizeSettings,
-  normalizeTriggerType, triggerDescriptions,
-  type InputDevice, type Settings, type ShortcutBackend,
-  type ShortcutBackendStatusPayload, type ShortcutPermissionSetup,
-  type ShortcutViewState, type StatusKind, type StatusPayload, type TriggerType,
+  DEFAULT_SETTINGS,
+  formatElapsed,
+  getErrorMessage,
+  normalizeSettings,
+  normalizeTriggerType,
+  triggerDescriptions,
+  type InputDevice,
+  type Settings,
+  type ShortcutBackend,
+  type ShortcutBackendStatusPayload,
+  type ShortcutPermissionSetup,
+  type ShortcutViewState,
+  type StatusKind,
+  type StatusPayload,
+  type TriggerType,
 };

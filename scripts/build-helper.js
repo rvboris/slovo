@@ -82,9 +82,11 @@ function parseArgs(argv) {
   const opts = { debug: undefined, platformOverride: undefined, target: undefined };
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === "--debug") {opts.debug = true;}
-    else if (argument === "--release") {opts.debug = false;}
-    else if (argument === "--target") {
+    if (argument === "--debug") {
+      opts.debug = true;
+    } else if (argument === "--release") {
+      opts.debug = false;
+    } else if (argument === "--target") {
       index += 1;
       opts.target = requireOptionValue("--target", argv.at(index));
     } else if (argument.startsWith("--target=")) {
@@ -104,7 +106,7 @@ function parseArgs(argv) {
           "  --target <triple>  Rust target triple (default: resolved from env/host).",
           "  --platform <os>    Override OS skip check (testing only).",
           "",
-        ].join("\n")  }\n`
+        ].join("\n")}\n`,
       );
       process.exit(SUCCESS);
     } else {
@@ -130,7 +132,9 @@ function isLinuxHost(platformOverride) {
 function hostTripleFromRustc() {
   const out = spawnSync("rustc", ["-vV"], { encoding: "utf8" });
   if (out.error !== undefined || out.status !== SUCCESS) {
-    fatal(`Could not determine target triple and rustc -vV failed: ${out.error?.message ?? out.stderr}`);
+    fatal(
+      `Could not determine target triple and rustc -vV failed: ${out.error?.message ?? out.stderr}`,
+    );
   }
   const match = /host:\s*(?<triple>\S+)/u.exec(out.stdout);
   const triple = match?.groups?.triple;
@@ -149,11 +153,17 @@ function hostTripleFromRustc() {
  */
 /** @param {string | undefined} cliTarget */
 function resolveTargetTriple(cliTarget) {
-  if (cliTarget !== undefined && cliTarget !== "") {return cliTarget;}
+  if (cliTarget !== undefined && cliTarget !== "") {
+    return cliTarget;
+  }
   const cargoEnv = process.env.CARGO_BUILD_TARGET?.trim();
-  if (cargoEnv !== undefined && cargoEnv !== "") {return cargoEnv;}
+  if (cargoEnv !== undefined && cargoEnv !== "") {
+    return cargoEnv;
+  }
   const tauriEnv = process.env.TAURI_ENV_TARGET_TRIPLE?.trim();
-  if (tauriEnv !== undefined && tauriEnv !== "") {return tauriEnv;}
+  if (tauriEnv !== undefined && tauriEnv !== "") {
+    return tauriEnv;
+  }
   return hostTripleFromRustc();
 }
 
@@ -163,16 +173,18 @@ function resolveTargetTriple(cliTarget) {
  */
 /** @param {string} triple */
 function assertSupportedLinuxTriple(triple) {
-  if (SUPPORTED_LINUX_TRIPLES.has(triple)) {return;}
+  if (SUPPORTED_LINUX_TRIPLES.has(triple)) {
+    return;
+  }
   const isLinuxish = triple.includes("-linux-") || triple.endsWith("-linux");
   if (isLinuxish) {
     fatal(
       `Target triple '${triple}' looks like Linux but is not in the explicitly supported list ` +
-        `(${[...SUPPORTED_LINUX_TRIPLES].join(", ")}). Add it to SUPPORTED_LINUX_TRIPLES if intended.`
+        `(${[...SUPPORTED_LINUX_TRIPLES].join(", ")}). Add it to SUPPORTED_LINUX_TRIPLES if intended.`,
     );
   }
   fatal(
-    `Target triple '${triple}' is not a supported Linux target. slovo-input-helper is Linux-only.`
+    `Target triple '${triple}' is not a supported Linux target. slovo-input-helper is Linux-only.`,
   );
 }
 
@@ -189,7 +201,9 @@ function cargoBuild({ debug, target }) {
     "--manifest-path",
     path.join(SRC_TAURI_DIR, "Cargo.toml"),
   ];
-  if (debug !== true) {args.push("--release");}
+  if (debug !== true) {
+    args.push("--release");
+  }
   args.push("--target", target);
   info(`cargo ${args.join(" ")}  (cwd: ${SRC_TAURI_DIR})`);
   // Run cargo from src-tauri. spawnSync with arg vector — no shell interpolation.
@@ -198,8 +212,12 @@ function cargoBuild({ debug, target }) {
     env: process.env,
     stdio: "inherit",
   });
-  if (result.error) {fatal(`Failed to spawn cargo: ${result.error.message}`);}
-  if (result.status !== SUCCESS) {fatal(`cargo build failed (exit ${result.status})`, result.status);}
+  if (result.error) {
+    fatal(`Failed to spawn cargo: ${result.error.message}`);
+  }
+  if (result.status !== SUCCESS) {
+    fatal(`cargo build failed (exit ${result.status})`, result.status);
+  }
 }
 
 /** @param {Readonly<{debug: boolean | undefined, target: string}>} options */
@@ -209,7 +227,9 @@ function locateArtifact({ debug, target }) {
     profileDir = "debug";
   }
   const exe = path.join(SRC_TAURI_DIR, "target", target, profileDir, CARGO_BIN_NAME);
-  if (!fs.existsSync(exe)) {fatal(`Expected cargo output not found: ${exe}`);}
+  if (!fs.existsSync(exe)) {
+    fatal(`Expected cargo output not found: ${exe}`);
+  }
   return exe;
 }
 
@@ -222,7 +242,9 @@ function stageSidecar(srcExe, triple) {
   // Not throw if the dir already exists; we verify it is a directory after.
   fs.mkdirSync(BINARIES_DIR, { mode: EXECUTABLE_MODE, recursive: true });
   const dirStat = fs.statSync(BINARIES_DIR);
-  if (!dirStat.isDirectory()) {fatal(`${BINARIES_DIR} exists and is not a directory`);}
+  if (!dirStat.isDirectory()) {
+    fatal(`${BINARIES_DIR} exists and is not a directory`);
+  }
   const dest = path.join(BINARIES_DIR, `${CARGO_BIN_NAME}-${triple}`);
   fs.copyFileSync(srcExe, dest);
   fs.chmodSync(dest, EXECUTABLE_MODE);

@@ -6,45 +6,65 @@ type Theme = "light" | "dark";
 const STORAGE_KEY = "theme";
 function initialTheme(): Theme {
   const stored = localStorage.getItem(STORAGE_KEY);
-  if (stored === "light" || stored === "dark") { return stored; }
-  if (globalThis.matchMedia("(prefers-color-scheme: dark)").matches) { return "dark"; }
+  if (stored === "light" || stored === "dark") {
+    return stored;
+  }
+  if (globalThis.matchMedia("(prefers-color-scheme: dark)").matches) {
+    return "dark";
+  }
   return "light";
 }
 
 async function publishTheme(theme: Theme): Promise<void> {
-  try { await emit("slovo://theme-changed", theme); }
-  catch {
-      // Local preference remains available offline.
- }
+  try {
+    await emit("slovo://theme-changed", theme);
+  } catch {
+    // Local preference remains available offline.
+  }
 }
 
-function useThemeEvents(primary: boolean, current: Readonly<{ current: Theme }>, setTheme: (theme: Theme) => void): void {
+function useThemeEvents(
+  primary: boolean,
+  current: Readonly<{ current: Theme }>,
+  setTheme: (theme: Theme) => void,
+): void {
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     async function connect(): Promise<() => void> {
       if (primary) {
-        return listen("slovo://theme-request", (): void => { void publishTheme(current.current); });
+        return listen("slovo://theme-request", (): void => {
+          void publishTheme(current.current);
+        });
       }
       const dispose = await listen<unknown>("slovo://theme-changed", ({ payload }) => {
-        if (!cancelled && (payload === "light" || payload === "dark")) { setTheme(payload); }
+        if (!cancelled && (payload === "light" || payload === "dark")) {
+          setTheme(payload);
+        }
       });
       return dispose;
     }
     async function subscribe(): Promise<void> {
       try {
         const dispose = await connect();
-        if (cancelled) { dispose(); return; }
+        if (cancelled) {
+          dispose();
+          return;
+        }
         unlisten = dispose;
         // Subscribe before requesting the primary window's current theme.
-        if (!primary) { await emit("slovo://theme-request"); }
+        if (!primary) {
+          await emit("slovo://theme-request");
+        }
       } catch {
-      // Stored preference remains the offline fallback.
- }
+        // Stored preference remains the offline fallback.
+      }
     }
     void subscribe();
     const sync = (event: Readonly<Pick<StorageEvent, "key">>): void => {
-      if (event.key === STORAGE_KEY) { setTheme(initialTheme()); }
+      if (event.key === STORAGE_KEY) {
+        setTheme(initialTheme());
+      }
     };
     globalThis.addEventListener("storage", sync);
     return (): void => {
@@ -68,7 +88,9 @@ function useTheme(): { theme: Theme; toggleTheme: () => void } {
 
   const toggleTheme = useCallback((): void => {
     let next: Theme = "dark";
-    if (current.current === "dark") { next = "light"; }
+    if (current.current === "dark") {
+      next = "light";
+    }
     current.current = next;
     setTheme(next);
     localStorage.setItem(STORAGE_KEY, next);

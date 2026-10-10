@@ -22,15 +22,18 @@ export function InputDeviceSetting({
   isLoading,
   onLoad,
   onChange,
-}: InputDeviceSettingProps) : JSX.Element | null {
+}: InputDeviceSettingProps): JSX.Element | null {
   const selectValue = value ?? "__default__";
   const visibleOptions = options.filter(
     (option) => option.value.trim() !== "" && option.label.trim() !== "",
   );
 
   const handleChange = (next: string): void => {
-    if (next === "__default__") { onChange(null); }
-    else { onChange(next); }
+    if (next === "__default__") {
+      onChange(null);
+    } else {
+      onChange(next);
+    }
   };
 
   return (
@@ -40,7 +43,9 @@ export function InputDeviceSetting({
         value={selectValue}
         onValueChange={handleChange}
         onOpenChange={(open) => {
-          if (open) {onLoad();}
+          if (open) {
+            onLoad();
+          }
         }}
       >
         <SelectTrigger id="input-device">
@@ -53,9 +58,7 @@ export function InputDeviceSetting({
             </SelectItem>
           ))}
           {isLoading && (
-            <output className="block text-xs text-muted-foreground">
-              Загрузка устройств…
-            </output>
+            <output className="block text-xs text-muted-foreground">Загрузка устройств…</output>
           )}
         </SelectContent>
       </Select>

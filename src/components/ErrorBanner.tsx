@@ -8,8 +8,10 @@ interface ErrorBannerProps {
   readonly onRetry: () => void;
 }
 
-export function ErrorBanner({ message, hasRetry, onRetry }: ErrorBannerProps) : JSX.Element | null {
-  if (!message) {return null;}
+export function ErrorBanner({ message, hasRetry, onRetry }: ErrorBannerProps): JSX.Element | null {
+  if (!message) {
+    return null;
+  }
 
   return (
     <div

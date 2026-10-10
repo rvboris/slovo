@@ -1,7 +1,12 @@
 import { Button } from "@/components/ui/button";
 import type { JSX } from "react";
 
-export function CorrectionSection({ correctionLabel, correctionTone, disabled, onOpen }: Readonly<{
+export function CorrectionSection({
+  correctionLabel,
+  correctionTone,
+  disabled,
+  onOpen,
+}: Readonly<{
   correctionLabel: string;
   correctionTone: string;
   disabled: boolean;
@@ -13,7 +18,9 @@ export function CorrectionSection({ correctionLabel, correctionTone, disabled, o
         <h2 className="text-sm font-semibold">Корректировка текста</h2>
         <p className={`mt-1 text-xs text-medium ${correctionTone}`}>{correctionLabel}</p>
       </div>
-      <Button size="sm" variant="outline" disabled={disabled} onClick={onOpen}>Настроить</Button>
+      <Button size="sm" variant="outline" disabled={disabled} onClick={onOpen}>
+        Настроить
+      </Button>
     </section>
   );
 }

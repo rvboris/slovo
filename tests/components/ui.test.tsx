@@ -1,5 +1,14 @@
 import { RadioGroup, RadioGroupItem } from "../../src/components/ui/radio-group";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from "../../src/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from "../../src/components/ui/select";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { Badge } from "../../src/components/ui/badge";
@@ -15,12 +24,29 @@ beforeEach(() => {
   vi.stubGlobal("PointerEvent", MouseEvent);
   Object.defineProperties(HTMLElement.prototype, {
     hasPointerCapture: { configurable: true, value: () => false },
-    releasePointerCapture: { configurable: true, value: () => { void 0; } },
-    scrollIntoView: { configurable: true, value: () => { void 0; } },
-    setPointerCapture: { configurable: true, value: () => { void 0; } },
+    releasePointerCapture: {
+      configurable: true,
+      value: () => {
+        void 0;
+      },
+    },
+    scrollIntoView: {
+      configurable: true,
+      value: () => {
+        void 0;
+      },
+    },
+    setPointerCapture: {
+      configurable: true,
+      value: () => {
+        void 0;
+      },
+    },
   });
 });
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe("UI wrappers", () => {
   it("forwards object refs and input/label props with real focus and typing", async () => {
@@ -29,7 +55,24 @@ describe("UI wrappers", () => {
     const label = createRef<HTMLLabelElement>();
     const button = createRef<HTMLButtonElement>();
     const click = vi.fn<() => void>();
-    const view = render(<><Label ref={label} htmlFor="name">Name</Label><Input ref={input} id="name" defaultValue="A" /><Button ref={button} disabled onClick={click}>Save</Button><Badge role="status" /* oxlint-disable-line jsx-a11y/prefer-tag-over-role -- role is part of the wrapper contract. */ variant="outline" className="custom">Draft</Badge></>);
+    const view = render(
+      <>
+        <Label ref={label} htmlFor="name">
+          Name
+        </Label>
+        <Input ref={input} id="name" defaultValue="A" />
+        <Button ref={button} disabled onClick={click}>
+          Save
+        </Button>
+        <Badge
+          role="status" /* oxlint-disable-line jsx-a11y/prefer-tag-over-role -- role is part of the wrapper contract. */
+          variant="outline"
+          className="custom"
+        >
+          Draft
+        </Badge>
+      </>,
+    );
     expect(label.current).toBe(screen.getByText("Name"));
     expect(input.current).toBe(screen.getByRole("textbox", { name: "Name" }));
     expect(button.current).toBe(screen.getByRole("button", { name: "Save" }));
@@ -51,7 +94,13 @@ describe("UI wrappers", () => {
     const ref = vi.fn((_node: HTMLButtonElement) => cleanup);
     const childClick = vi.fn<() => void>();
     const parentClick = vi.fn<() => void>();
-    const view = render(<Button ref={ref} asChild onClick={parentClick}><button type="button" onClick={childClick}>Slotted action</button></Button>);
+    const view = render(
+      <Button ref={ref} asChild onClick={parentClick}>
+        <button type="button" onClick={childClick}>
+          Slotted action
+        </button>
+      </Button>,
+    );
     expect(ref).toHaveBeenCalledWith(screen.getByRole("button", { name: "Slotted action" }));
     expect(screen.getAllByRole("button")).toHaveLength(1);
     await userEvent.setup().click(screen.getByRole("button"));
@@ -65,7 +114,13 @@ describe("UI wrappers", () => {
     const root = createRef<HTMLDivElement>();
     const item = createRef<HTMLButtonElement>();
     const change = vi.fn<(value: string) => void>();
-    render(<RadioGroup ref={root} aria-label="Mode" defaultValue="one" onValueChange={change}><RadioGroupItem value="one" aria-label="One" /><RadioGroupItem ref={item} value="two" aria-label="Two" /><RadioGroupItem disabled value="three" aria-label="Three" /></RadioGroup>);
+    render(
+      <RadioGroup ref={root} aria-label="Mode" defaultValue="one" onValueChange={change}>
+        <RadioGroupItem value="one" aria-label="One" />
+        <RadioGroupItem ref={item} value="two" aria-label="Two" />
+        <RadioGroupItem disabled value="three" aria-label="Three" />
+      </RadioGroup>,
+    );
     expect(root.current).toBe(screen.getByRole("radiogroup", { name: "Mode" }));
     expect(item.current).toBe(screen.getByRole("radio", { name: "Two" }));
     await userEvent.setup().click(screen.getByRole("radio", { name: "Two" }));
@@ -82,7 +137,26 @@ describe("UI wrappers", () => {
     const item = createRef<HTMLDivElement>();
     const separator = createRef<HTMLDivElement>();
     const change = vi.fn<(value: string) => void>();
-    render(<Select defaultValue="one" onValueChange={change}><SelectTrigger ref={trigger} aria-label="Device"><SelectValue /></SelectTrigger><SelectContent ref={content}><SelectGroup><SelectLabel ref={label}>Devices</SelectLabel><SelectItem value="one">One</SelectItem><SelectSeparator ref={separator} /><SelectItem ref={item} value="two">Two</SelectItem><SelectItem disabled value="three">Three</SelectItem></SelectGroup></SelectContent></Select>);
+    render(
+      <Select defaultValue="one" onValueChange={change}>
+        <SelectTrigger ref={trigger} aria-label="Device">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent ref={content}>
+          <SelectGroup>
+            <SelectLabel ref={label}>Devices</SelectLabel>
+            <SelectItem value="one">One</SelectItem>
+            <SelectSeparator ref={separator} />
+            <SelectItem ref={item} value="two">
+              Two
+            </SelectItem>
+            <SelectItem disabled value="three">
+              Three
+            </SelectItem>
+          </SelectGroup>
+        </SelectContent>
+      </Select>,
+    );
     expect(trigger.current).toBe(screen.getByRole("combobox"));
     await user.click(screen.getByRole("combobox"));
     expect(content.current).toBe(screen.getByRole("listbox"));
@@ -100,15 +174,42 @@ describe("UI wrappers", () => {
     const user = userEvent.setup();
     const load = vi.fn<() => void>();
     const change = vi.fn<(value: string | null) => void>();
-    const props = { isLoading: true, onChange: change, onLoad: load, options: [{ label: "System default", value: "__default__" }, { label: "USB microphone", value: "USB" }, { label: "Invalid", value: " " }, { label: " ", value: "hidden" }], value: "USB" };
-    const view = render(<InputDeviceSetting isLoading={props.isLoading} onChange={props.onChange} onLoad={props.onLoad} options={props.options} value={props.value} />);
+    const props = {
+      isLoading: true,
+      onChange: change,
+      onLoad: load,
+      options: [
+        { label: "System default", value: "__default__" },
+        { label: "USB microphone", value: "USB" },
+        { label: "Invalid", value: " " },
+        { label: " ", value: "hidden" },
+      ],
+      value: "USB",
+    };
+    const view = render(
+      <InputDeviceSetting
+        isLoading={props.isLoading}
+        onChange={props.onChange}
+        onLoad={props.onLoad}
+        options={props.options}
+        value={props.value}
+      />,
+    );
     await user.click(screen.getByRole("combobox", { name: "Устройство ввода" }));
     expect(load).toHaveBeenCalledOnce();
     expect(screen.getByText("Загрузка устройств…")).toBeVisible();
     expect(screen.getAllByRole("option")).toHaveLength(2);
     await user.click(screen.getByRole("option", { name: "System default" }));
     expect(change).toHaveBeenCalledWith(null);
-    view.rerender(<InputDeviceSetting isLoading={false} onChange={props.onChange} onLoad={props.onLoad} options={props.options} value={null} />);
+    view.rerender(
+      <InputDeviceSetting
+        isLoading={false}
+        onChange={props.onChange}
+        onLoad={props.onLoad}
+        options={props.options}
+        value={null}
+      />,
+    );
     await user.click(screen.getByRole("combobox"));
     await user.click(screen.getByRole("option", { name: "USB microphone" }));
     expect(change).toHaveBeenLastCalledWith("USB");

@@ -1,23 +1,32 @@
 import type { ComponentPropsWithRef, JSX } from "react";
-import { Indicator as RadioGroupPrimitiveIndicator, Item as RadioGroupPrimitiveItem, Root as RadioGroupPrimitiveRoot } from "@radix-ui/react-radio-group";
+import {
+  Indicator as RadioGroupPrimitiveIndicator,
+  Item as RadioGroupPrimitiveItem,
+  Root as RadioGroupPrimitiveRoot,
+} from "@radix-ui/react-radio-group";
 import { Circle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const RadioGroupPrimitive = { Indicator: RadioGroupPrimitiveIndicator, Item: RadioGroupPrimitiveItem, Root: RadioGroupPrimitiveRoot };
+const RadioGroupPrimitive = {
+  Indicator: RadioGroupPrimitiveIndicator,
+  Item: RadioGroupPrimitiveItem,
+  Root: RadioGroupPrimitiveRoot,
+};
 
-
-function RadioGroup({ ref, className, ...props }: Readonly<ComponentPropsWithRef<typeof RadioGroupPrimitive.Root>>): JSX.Element {
-  return (
-    <RadioGroupPrimitive.Root
-      className={cn("grid gap-2", className)}
-      {...props}
-      ref={ref}
-    />
-  );
+function RadioGroup({
+  ref,
+  className,
+  ...props
+}: Readonly<ComponentPropsWithRef<typeof RadioGroupPrimitive.Root>>): JSX.Element {
+  return <RadioGroupPrimitive.Root className={cn("grid gap-2", className)} {...props} ref={ref} />;
 }
 RadioGroup.displayName = RadioGroupPrimitive.Root.displayName;
 
-function RadioGroupItem({ ref, className, ...props }: Readonly<ComponentPropsWithRef<typeof RadioGroupPrimitive.Item>>): JSX.Element {
+function RadioGroupItem({
+  ref,
+  className,
+  ...props
+}: Readonly<ComponentPropsWithRef<typeof RadioGroupPrimitive.Item>>): JSX.Element {
   return (
     <RadioGroupPrimitive.Item
       ref={ref}

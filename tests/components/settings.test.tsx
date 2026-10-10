@@ -10,12 +10,21 @@ import { createRef } from "react";
 import userEvent from "@testing-library/user-event";
 
 const windowApi = vi.hoisted(() => ({ close: vi.fn(), minimize: vi.fn() }));
-vi.mock("@tauri-apps/api/window", (): { getCurrentWindow: () => typeof windowApi } => ({ getCurrentWindow: () => windowApi }));
+vi.mock("@tauri-apps/api/window", (): { getCurrentWindow: () => typeof windowApi } => ({
+  getCurrentWindow: () => windowApi,
+}));
 
 describe("settings public controls", () => {
   it("keeps focused server drafts, validates blur and schedules/checks valid edits", async () => {
     const user = userEvent.setup();
-    const props = { availability: "available" as const, onBlurSave: vi.fn(), onCheckAvailability: vi.fn(), onInvalidateAvailability: vi.fn(), onScheduleSave: vi.fn(), value: "http://localhost" };
+    const props = {
+      availability: "available" as const,
+      onBlurSave: vi.fn(),
+      onCheckAvailability: vi.fn(),
+      onInvalidateAvailability: vi.fn(),
+      onScheduleSave: vi.fn(),
+      value: "http://localhost",
+    };
     const view = render(<ServerUrlSetting {...props} />);
     expect(screen.getByText("Соединение установлено")).toBeVisible();
     expect(screen.queryByText("Сервер доступен")).not.toBeInTheDocument();
@@ -60,19 +69,39 @@ describe("settings public controls", () => {
     await user.tab();
     const toggle = screen.getByRole("radio", { name: "Перекл." });
     expect(toggle).toHaveFocus();
-    expect(toggle.closest("label")).toHaveClass("focus-within:outline-2", "focus-within:outline-ring");
+    expect(toggle.closest("label")).toHaveClass(
+      "focus-within:outline-2",
+      "focus-within:outline-ring",
+    );
     expect(toggle.closest("label")).toHaveClass("bg-[var(--mode-selected)]", "text-white");
     await user.keyboard("{ArrowRight>}");
-    await waitFor(() => { expect(change).toHaveBeenCalledWith("hold"); });
+    await waitFor(() => {
+      expect(change).toHaveBeenCalledWith("hold");
+    });
     expect(screen.getByRole("radio", { name: "Удержание" })).toHaveFocus();
     await user.keyboard("{/ArrowRight}");
     view.rerender(<TriggerSetting value="auto-vad" onChange={change} />);
-    expect(screen.getByText(/Запись остановится после паузы в речи/u)).toHaveTextContent("До 2 минут за запись.");
+    expect(screen.getByText(/Запись остановится после паузы в речи/u)).toHaveTextContent(
+      "До 2 минут за запись.",
+    );
   });
 
   it("exposes capture, setup and retry actions while respecting busy controls", async () => {
     const user = userEvent.setup();
-    const props = { captureMessage: null, hotkey: "Ctrl+Space", hotkeyDisabled: false, isCapturing: false, onHotkeyClick: vi.fn(), onRetry: vi.fn(), onSetup: vi.fn(), shortcutCanRetry: true, shortcutCanSetup: true, shortcutIsBusy: false, shortcutText: "Нет доступа", shortcutView: "warning" as const };
+    const props = {
+      captureMessage: null,
+      hotkey: "Ctrl+Space",
+      hotkeyDisabled: false,
+      isCapturing: false,
+      onHotkeyClick: vi.fn(),
+      onRetry: vi.fn(),
+      onSetup: vi.fn(),
+      shortcutCanRetry: true,
+      shortcutCanSetup: true,
+      shortcutIsBusy: false,
+      shortcutText: "Нет доступа",
+      shortcutView: "warning" as const,
+    };
     const view = render(<HotkeySetting {...props} />);
     await user.click(screen.getByRole("button", { name: "Сочетание клавиш" }));
     await user.click(screen.getByRole("button", { name: "Повторить" }));
@@ -80,8 +109,19 @@ describe("settings public controls", () => {
     expect(props.onHotkeyClick).toHaveBeenCalledOnce();
     expect(props.onRetry).toHaveBeenCalledOnce();
     expect(props.onSetup).toHaveBeenCalledOnce();
-    view.rerender(<HotkeySetting {...props} isCapturing captureMessage="Нажмите клавиши" hotkeyDisabled shortcutIsBusy />);
-    expect(screen.getByRole("button", { name: "Сочетание клавиш" })).toHaveAttribute("aria-pressed", "true");
+    view.rerender(
+      <HotkeySetting
+        {...props}
+        isCapturing
+        captureMessage="Нажмите клавиши"
+        hotkeyDisabled
+        shortcutIsBusy
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Сочетание клавиш" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(screen.getByRole("button", { name: "Сочетание клавиш" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Повторить" })).toBeDisabled();
     expect(screen.getByText("Нажмите клавиши")).toBeVisible();
@@ -102,7 +142,26 @@ describe("settings public controls", () => {
   it("discloses permission scope, gates commands and forwards acknowledgement and verification", async () => {
     const user = userEvent.setup();
     const panelRef = createRef<HTMLElement>();
-    const props = { ackChecked: false, copyInstallDisabled: true, copyInstallLabel: "Copy install", copyRevokeDisabled: false, copyRevokeLabel: "Copy revoke", installCommands: ["enable one", "enable two"], loading: false, onAckChange: vi.fn(), onClose: vi.fn(), onCopyInstall: vi.fn(), onCopyRevoke: vi.fn(), onVerify: vi.fn(), panelRef, revokeCommands: ["disable"], setup: { installed: false, setupError: "Permission denied" }, stateMessage: "", verifyDisabled: true, visible: false };
+    const props = {
+      ackChecked: false,
+      copyInstallDisabled: true,
+      copyInstallLabel: "Copy install",
+      copyRevokeDisabled: false,
+      copyRevokeLabel: "Copy revoke",
+      installCommands: ["enable one", "enable two"],
+      loading: false,
+      onAckChange: vi.fn(),
+      onClose: vi.fn(),
+      onCopyInstall: vi.fn(),
+      onCopyRevoke: vi.fn(),
+      onVerify: vi.fn(),
+      panelRef,
+      revokeCommands: ["disable"],
+      setup: { installed: false, setupError: "Permission denied" },
+      stateMessage: "",
+      verifyDisabled: true,
+      visible: false,
+    };
     const view = render(<PermissionPanel {...props} />);
     expect(screen.queryByRole("region")).not.toBeInTheDocument();
     view.rerender(<PermissionPanel {...props} visible loading />);
@@ -116,7 +175,16 @@ describe("settings public controls", () => {
     expect(screen.getByRole("button", { name: "Проверить снова" })).toBeDisabled();
     await user.click(screen.getByRole("checkbox"));
     expect(props.onAckChange).toHaveBeenCalledWith(true);
-    view.rerender(<PermissionPanel {...props} visible ackChecked copyInstallDisabled={false} verifyDisabled={false} stateMessage="Copied" />);
+    view.rerender(
+      <PermissionPanel
+        {...props}
+        visible
+        ackChecked
+        copyInstallDisabled={false}
+        verifyDisabled={false}
+        stateMessage="Copied"
+      />,
+    );
     expect(screen.getByRole("checkbox")).toBeChecked();
     expect(screen.getByText(/enable one/u)).toHaveTextContent("enable one enable two");
     await user.click(screen.getByRole("button", { name: "Copy install" }));
@@ -132,7 +200,9 @@ describe("settings public controls", () => {
   it("routes titlebar actions and keeps the brand decorative", async () => {
     const user = userEvent.setup();
     const toggle = vi.fn<() => void>();
-    const view = render(<StatusHeader kind="recording" text="Запись" theme="light" onToggleTheme={toggle} />);
+    const view = render(
+      <StatusHeader kind="recording" text="Запись" theme="light" onToggleTheme={toggle} />,
+    );
     expect(screen.getByText("Запись")).toBeVisible();
     expect(view.container.querySelector("svg.slovo-mark")).toHaveAttribute("aria-hidden", "true");
     await user.click(screen.getByRole("button", { name: "Включить тёмную тему" }));
@@ -141,7 +211,9 @@ describe("settings public controls", () => {
     expect(toggle).toHaveBeenCalledOnce();
     expect(windowApi.minimize).toHaveBeenCalledOnce();
     expect(windowApi.close).toHaveBeenCalledOnce();
-    view.rerender(<StatusHeader kind="correcting" text="Корректирую" theme="dark" onToggleTheme={toggle} />);
+    view.rerender(
+      <StatusHeader kind="correcting" text="Корректирую" theme="dark" onToggleTheme={toggle} />,
+    );
     expect(screen.getByRole("button", { name: "Включить светлую тему" })).toBeEnabled();
   });
 });

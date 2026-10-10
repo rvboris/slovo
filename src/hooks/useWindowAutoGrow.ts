@@ -11,7 +11,9 @@ const SIZE_EPSILON = 0.5;
 export function useWindowAutoGrow(ref: RefObject<HTMLElement | null>): void {
   useEffect((): (() => void) | undefined => {
     const el = ref.current;
-    if (el === null) { return undefined; }
+    if (el === null) {
+      return undefined;
+    }
 
     const win = getCurrentWindow();
     const lifecycle: { disposed: boolean } = { disposed: false };
@@ -22,14 +24,18 @@ export function useWindowAutoGrow(ref: RefObject<HTMLElement | null>): void {
     let firstMeasure = true;
 
     const pump = async (): Promise<void> => {
-      if (running || lifecycle.disposed || blocked) { return; }
+      if (running || lifecycle.disposed || blocked) {
+        return;
+      }
       running = true;
       try {
         if (desired !== applied || firstMeasure) {
           const target = desired;
           try {
             const [size, scale, monitor] = await Promise.all([
-              win.innerSize(), win.scaleFactor(), currentMonitor(),
+              win.innerSize(),
+              win.scaleFactor(),
+              currentMonitor(),
             ]);
             const { width, height } = size.toLogical(scale);
             firstMeasure = false;

@@ -165,8 +165,14 @@ body {
   padding: 0 14px;
 }
 
-.is-result .processing-spinner { display: none; }
-.is-result #processing-label { max-width: 300px; white-space: normal; line-height: 1.2; }
+.is-result .processing-spinner {
+  display: none;
+}
+.is-result #processing-label {
+  max-width: 300px;
+  white-space: normal;
+  line-height: 1.2;
+}
 
 .processing-spinner {
   width: 16px;
@@ -174,7 +180,11 @@ body {
   flex: none;
   border-radius: 50%;
   background: conic-gradient(from 0deg, transparent 15%, var(--accent));
-  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  -webkit-mask: radial-gradient(
+    farthest-side,
+    transparent calc(100% - 2.5px),
+    #000 calc(100% - 2px)
+  );
   mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
   animation: processing-spin 0.9s linear infinite;
 }
@@ -192,7 +202,9 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: opacity 160ms ease, transform 220ms var(--ease-spring);
+  transition:
+    opacity 160ms ease,
+    transform 220ms var(--ease-spring);
 }
 
 .recording-indicator.is-correcting #processing-label {
@@ -243,12 +255,25 @@ body {
 }
 
 @keyframes error-shake {
-  0%, 100% { transform: translateX(0); }
-  15% { transform: translateX(-5px); }
-  30% { transform: translateX(4px); }
-  45% { transform: translateX(-3px); }
-  60% { transform: translateX(2px); }
-  75% { transform: translateX(-1px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  15% {
+    transform: translateX(-5px);
+  }
+  30% {
+    transform: translateX(4px);
+  }
+  45% {
+    transform: translateX(-3px);
+  }
+  60% {
+    transform: translateX(2px);
+  }
+  75% {
+    transform: translateX(-1px);
+  }
 }
 
 @keyframes error-glow {

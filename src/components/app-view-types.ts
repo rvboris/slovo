@@ -20,11 +20,28 @@ export interface AppViewProps {
   readonly hotkey: Readonly<ReturnType<typeof useHotkey>>;
   readonly shortcutStatus: Readonly<ReturnType<typeof useShortcutStatus>["status"]>;
   readonly retryShortcutBackend: () => Promise<void>;
-  readonly permission: Readonly<Omit<ReturnType<typeof usePermissionSetup>, "installCommands" | "revokeCommands" | "panelRef" | "setup">> & { readonly installCommands: readonly string[]; readonly revokeCommands: readonly string[]; readonly panelRef: RefObject<HTMLElement | null>; readonly setup: Readonly<Omit<NonNullable<ReturnType<typeof usePermissionSetup>["setup"]>, "installCommands" | "revokeCommands">> | null }; 
+  readonly permission: Readonly<
+    Omit<
+      ReturnType<typeof usePermissionSetup>,
+      "installCommands" | "revokeCommands" | "panelRef" | "setup"
+    >
+  > & {
+    readonly installCommands: readonly string[];
+    readonly revokeCommands: readonly string[];
+    readonly panelRef: RefObject<HTMLElement | null>;
+    readonly setup: Readonly<
+      Omit<
+        NonNullable<ReturnType<typeof usePermissionSetup>["setup"]>,
+        "installCommands" | "revokeCommands"
+      >
+    > | null;
+  };
   readonly serverAvailability: Readonly<ReturnType<typeof useServerAvailability>>;
   readonly scheduleServerSave: (value: string) => void;
   readonly saveServerNow: (value: string) => void;
-  readonly deviceOptions: readonly Readonly<ReturnType<typeof useInputDevices>["options"][number]>[];
+  readonly deviceOptions: readonly Readonly<
+    ReturnType<typeof useInputDevices>["options"][number]
+  >[];
   readonly areInputDevicesLoading: boolean;
   readonly loadInputDevices: () => Promise<void>;
   readonly handleDeviceChange: (device: string | null) => void;

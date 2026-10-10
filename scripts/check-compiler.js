@@ -12,27 +12,41 @@ const events = new Map();
 
 /** @param {unknown} object @param {string} key @returns {unknown} */
 function field(object, key) {
-  if (typeof object !== "object" || object === null) { return false; }
+  if (typeof object !== "object" || object === null) {
+    return false;
+  }
   return Reflect.get(object, key);
 }
 
 /** @param {unknown} node @returns {Generator} */
 function* nodes(node) {
-  if (typeof node !== "object" || node === null) { return false; }
+  if (typeof node !== "object" || node === null) {
+    return false;
+  }
   yield node;
-  for (const child of Object.values(node)) { yield* nodes(child); }
+  for (const child of Object.values(node)) {
+    yield* nodes(child);
+  }
   return false;
 }
 
 /** @param {unknown} node @returns {boolean} */
 function isFunction(node) {
-  return ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(String(field(node, "type")));
+  return ["FunctionDeclaration", "FunctionExpression", "ArrowFunctionExpression"].includes(
+    String(field(node, "type")),
+  );
 }
 
 /** @param {unknown} node @returns {unknown} */
 function unwrap(node) {
-  if (isFunction(node)) { return node; }
-  if (["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression"].includes(String(field(node, "type")))) {
+  if (isFunction(node)) {
+    return node;
+  }
+  if (
+    ["TSAsExpression", "TSSatisfiesExpression", "TSNonNullExpression"].includes(
+      String(field(node, "type")),
+    )
+  ) {
     return unwrap(field(node, "expression"));
   }
   if (field(node, "type") === "CallExpression") {
@@ -47,22 +61,34 @@ function unwrap(node) {
 /** @param {string} filename @param {string} name @param {unknown} node @returns {Candidate | false} */
 function candidate(filename, name, node) {
   let kind = "component";
-  if (/^use[A-Z]/u.test(name)) { kind = "hook"; }
-  else if (!/^[A-Z]/u.test(name)) { return false; }
+  if (/^use[A-Z]/u.test(name)) {
+    kind = "hook";
+  } else if (!/^[A-Z]/u.test(name)) {
+    return false;
+  }
   const start = field(node, "start");
   const end = field(node, "end");
-  assert.ok(typeof start === "number" && typeof end === "number", `Ambiguous React candidate ${filename}:${name}`);
+  assert.ok(
+    typeof start === "number" && typeof end === "number",
+    `Ambiguous React candidate ${filename}:${name}`,
+  );
   return { end, filename, kind, name, start };
 }
 
 /** @param {string} filename @param {unknown} node @returns {Candidate | false} */
 function identify(filename, node) {
   const name = field(field(node, "id"), "name");
-  if (typeof name !== "string") { return false; }
-  if (field(node, "type") === "FunctionDeclaration") { return candidate(filename, name, node); }
+  if (typeof name !== "string") {
+    return false;
+  }
+  if (field(node, "type") === "FunctionDeclaration") {
+    return candidate(filename, name, node);
+  }
   if (field(node, "type") === "VariableDeclarator") {
     const callable = unwrap(field(node, "init"));
-    if (callable !== false) { return candidate(filename, name, callable); }
+    if (callable !== false) {
+      return candidate(filename, name, callable);
+    }
   }
   return false;
 }
@@ -74,7 +100,9 @@ function inventory(filename, source) {
   for (const node of nodes(ast)) {
     assert.notEqual(field(node, "value"), "use no memo", `Compiler opt-out in ${filename}`);
     const found = identify(filename, node);
-    if (found !== false) { candidates.push(found); }
+    if (found !== false) {
+      candidates.push(found);
+    }
   }
   return candidates;
 }
@@ -103,18 +131,28 @@ function reactBabel(options) {
 
 /** @param {Candidate} item @returns {boolean} */
 function compiled(item) {
-  return (events.get(item.filename) ?? []).some(event => {
+  return (events.get(item.filename) ?? []).some((event) => {
     const location = field(event, "fnLoc");
-    return field(event, "kind") === "CompileSuccess" && field(field(location, "start"), "index") === item.start && field(field(location, "end"), "index") === item.end;
+    return (
+      field(event, "kind") === "CompileSuccess" &&
+      field(field(location, "start"), "index") === item.start &&
+      field(field(location, "end"), "index") === item.end
+    );
   });
 }
 
 /** @param {readonly Candidate[]} candidates */
 function verify(candidates) {
-  const missing = candidates.filter(item => !compiled(item));
-  process.stdout.write(`${JSON.stringify({ candidates, events: [...events], missing }, undefined, JSON_INDENT)}\n`);
+  const missing = candidates.filter((item) => !compiled(item));
+  process.stdout.write(
+    `${JSON.stringify({ candidates, events: [...events], missing }, undefined, JSON_INDENT)}\n`,
+  );
   assert.notDeepEqual(candidates, [], "No authored React functions discovered");
-  assert.deepEqual(missing, [], "Authored functions were skipped or unseen by the configured compiler");
+  assert.deepEqual(
+    missing,
+    [],
+    "Authored functions were skipped or unseen by the configured compiler",
+  );
 }
 
 void test("all authored React components and hooks compile through configured Vite", async () => {
@@ -125,14 +163,16 @@ void test("all authored React components and hooks compile through configured Vi
   });
   try {
     const entries = await fs.readdir("src", { recursive: true });
-    const files = entries.filter(filename => /\.tsx?$/u.test(filename));
-    const results = await Promise.all(files.map(async filename => {
-      const absolute = path.resolve("src", filename);
-      const source = await fs.readFile(absolute, "utf8");
-      const candidates = inventory(absolute, source);
-      await server.transformRequest(`/src/${filename}`);
-      return candidates;
-    }));
+    const files = entries.filter((filename) => /\.tsx?$/u.test(filename));
+    const results = await Promise.all(
+      files.map(async (filename) => {
+        const absolute = path.resolve("src", filename);
+        const source = await fs.readFile(absolute, "utf8");
+        const candidates = inventory(absolute, source);
+        await server.transformRequest(`/src/${filename}`);
+        return candidates;
+      }),
+    );
     verify(results.flat());
   } finally {
     await server.close();

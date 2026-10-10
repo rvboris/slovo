@@ -23,7 +23,9 @@ const GRADIENT_MIDPOINT = 0.5;
 const COLUMN_OVERLAP = 0.5;
 function requireElement(selector: string): HTMLElement {
   const element = document.querySelector<HTMLElement>(selector);
-  if (element === null) { throw new Error("Missing recording overlay elements"); }
+  if (element === null) {
+    throw new Error("Missing recording overlay elements");
+  }
   return element;
 }
 const indicator = requireElement(".recording-indicator");
@@ -33,7 +35,9 @@ const processingState = requireElement("#processing-state");
 const processingLabel = requireElement("#processing-label");
 const errorLabel = requireElement("#error-label");
 const time = document.querySelector<HTMLTimeElement>("#recording-time");
-if (time === null) { throw new Error("Missing recording overlay elements"); }
+if (time === null) {
+  throw new Error("Missing recording overlay elements");
+}
 const timeElement = time;
 const canvas = document.querySelector<HTMLCanvasElement>("#voice-canvas");
 const context = canvas?.getContext("2d") ?? null;
@@ -50,7 +54,10 @@ const MIDPOINT = PILL_HEIGHT / MIRROR_FACTOR;
 const COLUMN_WIDTH = SAMPLES / SAMPLES;
 const levels = new Float32Array(SAMPLES);
 let smoothedLevel = ZERO;
-interface Theme { readonly glow: string; readonly trace: readonly [string, string, string] }
+interface Theme {
+  readonly glow: string;
+  readonly trace: readonly [string, string, string];
+}
 function getTheme(): Theme {
   if (LIGHT_THEME) {
     return {
@@ -74,40 +81,65 @@ function resetVoiceLevel(): void {
   smoothedLevel = ZERO;
   levels.fill(ZERO);
   stopVisualizer();
-  if (canvas !== null) { canvas.getContext("2d")?.clearRect(ZERO, ZERO, canvas.width, canvas.height); }
+  if (canvas !== null) {
+    canvas.getContext("2d")?.clearRect(ZERO, ZERO, canvas.width, canvas.height);
+  }
 }
 function pushVoiceLevel(raw: number): void {
   // Ignore stray events while the recording dot is hidden.
-  if (recordingState.hidden === true) { return; }
+  if (recordingState.hidden === true) {
+    return;
+  }
   const target = Math.min(ONE, Math.max(ZERO, raw));
   smoothedLevel += (target - smoothedLevel) * LEVEL_ALPHA;
 }
 function drawGlow(): void {
-  if (context === null) { return; }
+  if (context === null) {
+    return;
+  }
   const radius = GLOW_BASE_RADIUS + smoothedLevel * GLOW_LEVEL_RADIUS;
-  const glow = context.createRadialGradient(GLOW_CENTER_X, MIDPOINT, ZERO, GLOW_CENTER_X, MIDPOINT, radius);
+  const glow = context.createRadialGradient(
+    GLOW_CENTER_X,
+    MIDPOINT,
+    ZERO,
+    GLOW_CENTER_X,
+    MIDPOINT,
+    radius,
+  );
   glow.addColorStop(ZERO, THEME.glow);
   glow.addColorStop(ONE, "rgba(0, 0, 0, 0)");
   context.fillStyle = glow;
   context.fillRect(ZERO, ZERO, GLOW_WIDTH, PILL_HEIGHT);
 }
 function fillColumn(index: number, height: number): void {
-  if (context === null) { return; }
+  if (context === null) {
+    return;
+  }
   const gradient = context.createLinearGradient(ZERO, MIDPOINT - height, ZERO, MIDPOINT + height);
   const [top, center, bottom] = THEME.trace;
   gradient.addColorStop(ZERO, top);
   gradient.addColorStop(GRADIENT_MIDPOINT, center);
   gradient.addColorStop(ONE, bottom);
   context.fillStyle = gradient;
-  context.fillRect(index * COLUMN_WIDTH, MIDPOINT - height, COLUMN_WIDTH + COLUMN_OVERLAP, height * MIRROR_FACTOR);
+  context.fillRect(
+    index * COLUMN_WIDTH,
+    MIDPOINT - height,
+    COLUMN_WIDTH + COLUMN_OVERLAP,
+    height * MIRROR_FACTOR,
+  );
 }
 function drawColumn(index: number): void {
-  const height = levels[index] ** AMPLITUDE_GAMMA * (index / SAMPLES) * (PILL_HEIGHT * AMPLITUDE_HEIGHT_RATIO);
-  if (height < MIN_AMPLITUDE) { return; }
+  const height =
+    levels[index] ** AMPLITUDE_GAMMA * (index / SAMPLES) * (PILL_HEIGHT * AMPLITUDE_HEIGHT_RATIO);
+  if (height < MIN_AMPLITUDE) {
+    return;
+  }
   fillColumn(index, height);
 }
 function drawFrame(): void {
-  if (context === null) { return; }
+  if (context === null) {
+    return;
+  }
   context.clearRect(ZERO, ZERO, SAMPLES, PILL_HEIGHT);
   drawGlow();
   for (let index = ZERO; index < SAMPLES; index += ONE) {
@@ -126,8 +158,12 @@ function animate(): void {
   animation.rafId = globalThis.requestAnimationFrame(animate);
 }
 function startVisualizer(): void {
-  if (canvas === null || animation.rafId !== undefined) { return; }
-  if (context === null) { return; }
+  if (canvas === null || animation.rafId !== undefined) {
+    return;
+  }
+  if (context === null) {
+    return;
+  }
   const pixelRatio = Math.min(MAX_PIXEL_RATIO, globalThis.devicePixelRatio || ONE);
   canvas.width = Math.round(SAMPLES * pixelRatio);
   canvas.height = Math.round(PILL_HEIGHT * pixelRatio);
@@ -143,13 +179,17 @@ function start(elapsedSeconds = ZERO): void {
   offsetSeconds = elapsedSeconds;
   startedAt = performance.now();
   render(offsetSeconds);
-  if (animation.timer !== undefined) { globalThis.clearInterval(animation.timer); }
+  if (animation.timer !== undefined) {
+    globalThis.clearInterval(animation.timer);
+  }
   animation.timer = globalThis.setInterval(() => {
     render(offsetSeconds + (performance.now() - startedAt) / MILLISECONDS_PER_SECOND);
   }, TIMER_INTERVAL);
 }
 function stop(): void {
-  if (animation.timer !== undefined) { globalThis.clearInterval(animation.timer); }
+  if (animation.timer !== undefined) {
+    globalThis.clearInterval(animation.timer);
+  }
   animation.timer = undefined;
   render(ZERO);
 }
@@ -164,10 +204,16 @@ let overlayWidened = false;
 async function resizeOverlay(width: number): Promise<void> {
   const win = getCurrentWindow();
   try {
-    const [pos, inner, scale] = [await win.outerPosition(), await win.innerSize(), await win.scaleFactor()];
+    const [pos, inner, scale] = [
+      await win.outerPosition(),
+      await win.innerSize(),
+      await win.scaleFactor(),
+    ];
     await win.setSize(new LogicalSize(width, OVERLAY_H));
     const dx = Math.round((width * scale - inner.width) / MIRROR_FACTOR);
-    if (dx !== ZERO) { await win.setPosition(new PhysicalPosition(pos.x - dx, pos.y)); }
+    if (dx !== ZERO) {
+      await win.setPosition(new PhysicalPosition(pos.x - dx, pos.y));
+    }
   } catch {
     // Non-fatal: pill falls back to in-window ellipsis.
   }
@@ -231,8 +277,12 @@ function showIdle(): void {
 }
 function resultLabel(payload: Readonly<RuntimeStatus>): string {
   let label = "Текст вставлен";
-  if (payload.kind === "copied") { label = "Скопировано — вставьте вручную"; }
-  if ((payload.correctionWarning ?? "") !== "") { label += " · Без корректировки"; }
+  if (payload.kind === "copied") {
+    label = "Скопировано — вставьте вручную";
+  }
+  if ((payload.correctionWarning ?? "") !== "") {
+    label += " · Без корректировки";
+  }
   return label;
 }
 function showResult(payload: Readonly<RuntimeStatus>): void {
@@ -246,7 +296,9 @@ function showResult(payload: Readonly<RuntimeStatus>): void {
 function applyStatus(payload: Readonly<RuntimeStatus>): void {
   processingState.hidden = true;
   indicator.classList.remove("is-result");
-  if (payload.kind === "recording") { showRecording(payload.elapsedSeconds ?? ZERO); } else if (payload.kind === "transcribing" || payload.kind === "correcting") {
+  if (payload.kind === "recording") {
+    showRecording(payload.elapsedSeconds ?? ZERO);
+  } else if (payload.kind === "transcribing" || payload.kind === "correcting") {
     showProcessing(payload.kind);
   } else if (payload.kind === "error") {
     showError();
@@ -259,24 +311,39 @@ function applyStatus(payload: Readonly<RuntimeStatus>): void {
 const lifecycle = { cancelled: false, revision: -1 };
 const disposers: (() => void)[] = [];
 function retainListener(dispose: () => void): void {
-  if (lifecycle.cancelled) { dispose(); } else { disposers.push(dispose); }
+  if (lifecycle.cancelled) {
+    dispose();
+  } else {
+    disposers.push(dispose);
+  }
 }
 function acceptStatus(payload: Readonly<RuntimeStatus>): void {
-  if (lifecycle.cancelled || payload.revision <= lifecycle.revision) { return; }
+  if (lifecycle.cancelled || payload.revision <= lifecycle.revision) {
+    return;
+  }
   lifecycle.revision = payload.revision;
   applyStatus(payload);
 }
 async function subscribeAudio(): Promise<void> {
   try {
-    retainListener(await listen<unknown>("slovo://audio-level", (event: { readonly payload: unknown }) => {
-  if (lifecycle.cancelled) { return; }
-  const { payload } = event;
-  let level = ZERO;
-  if (payload !== null && typeof payload === "object" && "level" in payload && typeof payload.level === "number") {
-    ({ level } = payload);
-  }
-  pushVoiceLevel(level);
-}));
+    retainListener(
+      await listen<unknown>("slovo://audio-level", (event: { readonly payload: unknown }) => {
+        if (lifecycle.cancelled) {
+          return;
+        }
+        const { payload } = event;
+        let level = ZERO;
+        if (
+          payload !== null &&
+          typeof payload === "object" &&
+          "level" in payload &&
+          typeof payload.level === "number"
+        ) {
+          ({ level } = payload);
+        }
+        pushVoiceLevel(level);
+      }),
+    );
   } catch {
     // Status remains available without audio levels.
   }
@@ -284,17 +351,34 @@ async function subscribeAudio(): Promise<void> {
 void subscribeAudio();
 async function loadInitialStatus(): Promise<void> {
   try {
-    retainListener(await listen<Readonly<RuntimeStatus>>("slovo://status", (event: { readonly payload: Readonly<RuntimeStatus> }) => { acceptStatus(event.payload); }));
-    if (lifecycle.cancelled) { return; }
+    retainListener(
+      await listen<Readonly<RuntimeStatus>>(
+        "slovo://status",
+        (event: { readonly payload: Readonly<RuntimeStatus> }) => {
+          acceptStatus(event.payload);
+        },
+      ),
+    );
+    if (lifecycle.cancelled) {
+      return;
+    }
     acceptStatus(await invoke<RuntimeStatus>("get_status"));
   } catch {
-    if (!lifecycle.cancelled && lifecycle.revision < ZERO) { showError("Не удалось синхронизировать состояние"); }
+    if (!lifecycle.cancelled && lifecycle.revision < ZERO) {
+      showError("Не удалось синхронизировать состояние");
+    }
   }
 }
-globalThis.addEventListener("pagehide", () => {
-  lifecycle.cancelled = true;
-  for (const dispose of disposers) { dispose(); }
-  stop();
-}, { once: true });
+globalThis.addEventListener(
+  "pagehide",
+  () => {
+    lifecycle.cancelled = true;
+    for (const dispose of disposers) {
+      dispose();
+    }
+    stop();
+  },
+  { once: true },
+);
 showIdle();
 void loadInitialStatus();

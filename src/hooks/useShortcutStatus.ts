@@ -1,7 +1,7 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { ShortcutBackendStatusPayload, ShortcutViewState } from '@/lib/types';
+import type { ShortcutBackendStatusPayload, ShortcutViewState } from "@/lib/types";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getErrorMessage } from '@/lib/types';
+import { getErrorMessage } from "@/lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 
@@ -21,73 +21,131 @@ interface UseShortcutStatusOptions {
   readonly onPermissionDenied: (canSetup: boolean) => void;
 }
 
-async function loadShortcutOperation({ eventRevisionRef, renderStatus, onError }: Readonly<{ eventRevisionRef: RefObject<number>; renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void; onError: (message: string, retry?: () => Promise<void>) => void }>): Promise<void> {
-    // A shortcut-status event received while this request is in flight is
-    // Newer than the response, so the response must not overwrite it.
-    const requestRevision = eventRevisionRef.current;
-    try {
-      const result = await invoke<ShortcutBackendStatusPayload>(
-        "get_shortcut_backend_status",
-      );
-      if (eventRevisionRef.current === requestRevision) {renderStatus(result);}
-    } catch (error) {
-      if (eventRevisionRef.current === requestRevision) {
-        renderStatus({ detail: "", state: "failed" });
-      }
-      onError(
-        getErrorMessage(error, "Не удалось получить состояние сочетания."),
-        async (): Promise<void> => { await loadShortcutOperation({ eventRevisionRef, onError, renderStatus }); },
-      );
+async function loadShortcutOperation({
+  eventRevisionRef,
+  renderStatus,
+  onError,
+}: Readonly<{
+  eventRevisionRef: RefObject<number>;
+  renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void;
+  onError: (message: string, retry?: () => Promise<void>) => void;
+}>): Promise<void> {
+  // A shortcut-status event received while this request is in flight is
+  // Newer than the response, so the response must not overwrite it.
+  const requestRevision = eventRevisionRef.current;
+  try {
+    const result = await invoke<ShortcutBackendStatusPayload>("get_shortcut_backend_status");
+    if (eventRevisionRef.current === requestRevision) {
+      renderStatus(result);
     }
+  } catch (error) {
+    if (eventRevisionRef.current === requestRevision) {
+      renderStatus({ detail: "", state: "failed" });
+    }
+    onError(
+      getErrorMessage(error, "Не удалось получить состояние сочетания."),
+      async (): Promise<void> => {
+        await loadShortcutOperation({ eventRevisionRef, onError, renderStatus });
+      },
+    );
   }
+}
 
-function useLoadShortcutStatus({ eventRevisionRef, renderStatus, onError }: Readonly<{ eventRevisionRef: RefObject<number>; renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void; onError: (message: string, retry?: () => Promise<void>) => void }>): () => Promise<void> {
- const loadShortcutStatus = useCallback(async (): Promise<void> => { await loadShortcutOperation({ eventRevisionRef, onError, renderStatus }); }, [renderStatus, onError, eventRevisionRef]);
- return loadShortcutStatus;
+function useLoadShortcutStatus({
+  eventRevisionRef,
+  renderStatus,
+  onError,
+}: Readonly<{
+  eventRevisionRef: RefObject<number>;
+  renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void;
+  onError: (message: string, retry?: () => Promise<void>) => void;
+}>): () => Promise<void> {
+  const loadShortcutStatus = useCallback(async (): Promise<void> => {
+    await loadShortcutOperation({ eventRevisionRef, onError, renderStatus });
+  }, [renderStatus, onError, eventRevisionRef]);
+  return loadShortcutStatus;
 }
 function permissionText(canSetup: boolean): string {
-  if (canSetup) { return "Нет доступа к клавиатуре. В Wayland для глобального сочетания нужно разрешить чтение устройств ввода — тогда Слово видит только нажатия назначенного сочетания. Откройте «Настроить доступ», чтобы разрешить, или повторите попытку."; }
+  if (canSetup) {
+    return "Нет доступа к клавиатуре. В Wayland для глобального сочетания нужно разрешить чтение устройств ввода — тогда Слово видит только нажатия назначенного сочетания. Откройте «Настроить доступ», чтобы разрешить, или повторите попытку.";
+  }
   return "Нет доступа к клавиатуре. В Wayland для глобального сочетания нужно разрешить чтение устройств ввода. Повторите попытку.";
 }
 function failureText(detail: string | undefined): string {
   const text = detail?.trim() ?? "";
-  if (text === "") { return "Не удалось запустить сочетание. Повторите попытку."; }
-  return `Не удалось запустить сочетание: ${  text}`;
+  if (text === "") {
+    return "Не удалось запустить сочетание. Повторите попытку.";
+  }
+  return `Не удалось запустить сочетание: ${text}`;
 }
-function mapPayloadToStatus(payload: Readonly<ShortcutBackendStatusPayload>): Omit<ShortcutStatus, "isBusy"> {
+function mapPayloadToStatus(
+  payload: Readonly<ShortcutBackendStatusPayload>,
+): Omit<ShortcutStatus, "isBusy"> {
   const base = { canRetry: false, canSetup: false };
   switch (payload.state) {
-    case "starting": case "restarting": { return { ...base, text: "Готовим глобальное сочетание…", view: "preparing" };}
-    case "active": { return { ...base, text: "Сочетание активно", view: "active" };
+    case "starting":
+    case "restarting": {
+      return { ...base, text: "Готовим глобальное сочетание…", view: "preparing" };
     }
-    case "permission-denied": { return { canRetry: true, canSetup: payload.setupAvailable === true, text: permissionText(payload.setupAvailable === true), view: "warning" };
+    case "active": {
+      return { ...base, text: "Сочетание активно", view: "active" };
     }
-    case "devices-unavailable": { return { ...base, canRetry: true, text: "Не нашли подходящих устройств ввода. Проверьте, что клавиатура подключена и доступна для чтения, и повторите попытку.", view: "warning" };
+    case "permission-denied": {
+      return {
+        canRetry: true,
+        canSetup: payload.setupAvailable === true,
+        text: permissionText(payload.setupAvailable === true),
+        view: "warning",
+      };
     }
-    case "failed": { return { ...base, canRetry: true, text: failureText(payload.detail), view: "error" };
+    case "devices-unavailable": {
+      return {
+        ...base,
+        canRetry: true,
+        text: "Не нашли подходящих устройств ввода. Проверьте, что клавиатура подключена и доступна для чтения, и повторите попытку.",
+        view: "warning",
+      };
     }
-    case "shutting-down": { return { ...base, text: "Завершаем работу…", view: "neutral" };
+    case "failed": {
+      return { ...base, canRetry: true, text: failureText(payload.detail), view: "error" };
     }
-    default: { return { ...base, text: "Состояние сочетания неизвестно", view: "neutral" };
+    case "shutting-down": {
+      return { ...base, text: "Завершаем работу…", view: "neutral" };
+    }
+    default: {
+      return { ...base, text: "Состояние сочетания неизвестно", view: "neutral" };
     }
   }
 }
 
-function useShortcutEvents(renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void, onError: UseShortcutStatusOptions["onError"], eventRevisionRef: RefObject<number>): void {
+function useShortcutEvents(
+  renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void,
+  onError: UseShortcutStatusOptions["onError"],
+  eventRevisionRef: RefObject<number>,
+): void {
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
     async function subscribe(): Promise<void> {
       try {
-        const dispose = await listen<ShortcutBackendStatusPayload>("slovo://shortcut-status", ({ payload }) => {
-          if (!cancelled) {
-            eventRevisionRef.current += 1;
-            renderStatus(payload);
-          }
-        });
-        if (cancelled) { dispose(); } else { unlisten = dispose; }
+        const dispose = await listen<ShortcutBackendStatusPayload>(
+          "slovo://shortcut-status",
+          ({ payload }) => {
+            if (!cancelled) {
+              eventRevisionRef.current += 1;
+              renderStatus(payload);
+            }
+          },
+        );
+        if (cancelled) {
+          dispose();
+        } else {
+          unlisten = dispose;
+        }
       } catch {
-        if (!cancelled) { onError("Не удалось подключить отображение состояния сочетания."); }
+        if (!cancelled) {
+          onError("Не удалось подключить отображение состояния сочетания.");
+        }
       }
     }
     void subscribe();
@@ -99,28 +157,70 @@ function useShortcutEvents(renderStatus: (payload: Readonly<ShortcutBackendStatu
   }, [renderStatus, onError, eventRevisionRef]);
 }
 
-async function retryShortcutOperation({ onClearError, onError, renderStatus, retryPendingRef, setStatus }: Readonly<{ onClearError: () => void; onError: UseShortcutStatusOptions["onError"]; renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void; retryPendingRef: RefObject<boolean>; setStatus: Dispatch<SetStateAction<ShortcutStatus>> }>): Promise<void> {
-    if (retryPendingRef.current) {return;}
-    retryPendingRef.current = true;
-    setStatus((prev) => ({ ...prev, isBusy: true }));
-    try {
-      renderStatus(await invoke<ShortcutBackendStatusPayload>("retry_shortcut_backend"));
-      onClearError();
-    } catch (error) {
-      onError(
-        getErrorMessage(error, "Не удалось перезапустить сочетание."),
-        async (): Promise<void> => { await retryShortcutOperation({ onClearError, onError, renderStatus, retryPendingRef, setStatus }); },
-      );
-    } finally {
-      retryPendingRef.current = false;
-      setStatus((prev) => ({ ...prev, isBusy: false }));
-    }
+async function retryShortcutOperation({
+  onClearError,
+  onError,
+  renderStatus,
+  retryPendingRef,
+  setStatus,
+}: Readonly<{
+  onClearError: () => void;
+  onError: UseShortcutStatusOptions["onError"];
+  renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void;
+  retryPendingRef: RefObject<boolean>;
+  setStatus: Dispatch<SetStateAction<ShortcutStatus>>;
+}>): Promise<void> {
+  if (retryPendingRef.current) {
+    return;
   }
+  retryPendingRef.current = true;
+  setStatus((prev) => ({ ...prev, isBusy: true }));
+  try {
+    renderStatus(await invoke<ShortcutBackendStatusPayload>("retry_shortcut_backend"));
+    onClearError();
+  } catch (error) {
+    onError(
+      getErrorMessage(error, "Не удалось перезапустить сочетание."),
+      async (): Promise<void> => {
+        await retryShortcutOperation({
+          onClearError,
+          onError,
+          renderStatus,
+          retryPendingRef,
+          setStatus,
+        });
+      },
+    );
+  } finally {
+    retryPendingRef.current = false;
+    setStatus((prev) => ({ ...prev, isBusy: false }));
+  }
+}
 
-function useShortcutRetry({ onClearError, onError, renderStatus, retryPendingRef, setStatus }: Readonly<{ onClearError: () => void; onError: UseShortcutStatusOptions["onError"]; renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void; retryPendingRef: RefObject<boolean>; setStatus: Dispatch<SetStateAction<ShortcutStatus>> }>): () => Promise<void> {
-  const retryShortcutBackend = useCallback(async (): Promise<void> => { await retryShortcutOperation({ onClearError, onError, renderStatus, retryPendingRef, setStatus }); }, [renderStatus, onError, onClearError, retryPendingRef, setStatus]);
+function useShortcutRetry({
+  onClearError,
+  onError,
+  renderStatus,
+  retryPendingRef,
+  setStatus,
+}: Readonly<{
+  onClearError: () => void;
+  onError: UseShortcutStatusOptions["onError"];
+  renderStatus: (payload: Readonly<ShortcutBackendStatusPayload>) => void;
+  retryPendingRef: RefObject<boolean>;
+  setStatus: Dispatch<SetStateAction<ShortcutStatus>>;
+}>): () => Promise<void> {
+  const retryShortcutBackend = useCallback(async (): Promise<void> => {
+    await retryShortcutOperation({
+      onClearError,
+      onError,
+      renderStatus,
+      retryPendingRef,
+      setStatus,
+    });
+  }, [renderStatus, onError, onClearError, retryPendingRef, setStatus]);
 
- return retryShortcutBackend;
+  return retryShortcutBackend;
 }
 
 export function useShortcutStatus({
@@ -151,7 +251,13 @@ export function useShortcutStatus({
     [onPermissionDenied],
   );
 
-  const retryShortcutBackend = useShortcutRetry({ onClearError, onError, renderStatus, retryPendingRef, setStatus });
+  const retryShortcutBackend = useShortcutRetry({
+    onClearError,
+    onError,
+    renderStatus,
+    retryPendingRef,
+    setStatus,
+  });
 
   const loadShortcutStatus = useLoadShortcutStatus({ eventRevisionRef, onError, renderStatus });
 

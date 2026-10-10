@@ -42,11 +42,13 @@ export function HotkeySetting({
   shortcutIsBusy,
   onRetry,
   onSetup,
-}: HotkeySettingProps) : JSX.Element | null {
+}: HotkeySettingProps): JSX.Element | null {
   const parts = hotkeyParts(hotkey);
   const firstPartIndex = 0;
   let captureHint = "Нажмите, чтобы изменить";
-  if (isCapturing) { captureHint = "Escape — отменить"; }
+  if (isCapturing) {
+    captureHint = "Escape — отменить";
+  }
 
   return (
     <div className="space-y-2">
@@ -66,7 +68,10 @@ export function HotkeySetting({
         )}
       >
         {Boolean(captureMessage) && (
-          <span className="font-semibold text-sm text-muted-foreground data-[capture]:text-accent-foreground/80" data-capture={isCapturing || undefined}>
+          <span
+            className="font-semibold text-sm text-muted-foreground data-[capture]:text-accent-foreground/80"
+            data-capture={isCapturing || undefined}
+          >
             {captureMessage}
           </span>
         )}
@@ -75,16 +80,27 @@ export function HotkeySetting({
             {parts.map((part, index) => (
               <span key={part} className="inline-flex items-center gap-1">
                 {index > firstPartIndex && (
-                  <span className="font-normal text-muted-foreground data-[capture]:text-accent-foreground/60" data-capture={isCapturing || undefined}>+</span>
+                  <span
+                    className="font-normal text-muted-foreground data-[capture]:text-accent-foreground/60"
+                    data-capture={isCapturing || undefined}
+                  >
+                    +
+                  </span>
                 )}
-                <kbd className="inline-block rounded-sm border px-1.5 py-0.5 text-xs font-semibold border-border bg-muted data-[capture]:border-accent-foreground/25 data-[capture]:bg-accent-foreground/15 data-[capture]:text-accent-foreground" data-capture={isCapturing || undefined}>
+                <kbd
+                  className="inline-block rounded-sm border px-1.5 py-0.5 text-xs font-semibold border-border bg-muted data-[capture]:border-accent-foreground/25 data-[capture]:bg-accent-foreground/15 data-[capture]:text-accent-foreground"
+                  data-capture={isCapturing || undefined}
+                >
                   {displayPart(part)}
                 </kbd>
               </span>
             ))}
           </span>
         )}
-        <span className="ml-auto text-xs text-muted-foreground data-[capture]:text-accent-foreground/70 whitespace-nowrap" data-capture={isCapturing || undefined}>
+        <span
+          className="ml-auto text-xs text-muted-foreground data-[capture]:text-accent-foreground/70 whitespace-nowrap"
+          data-capture={isCapturing || undefined}
+        >
           {captureHint}
         </span>
       </button>
@@ -112,12 +128,7 @@ export function HotkeySetting({
           </Button>
         )}
         {shortcutCanSetup && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={onSetup}
-            className="text-xs h-7 px-2"
-          >
+          <Button variant="outline" size="sm" onClick={onSetup} className="text-xs h-7 px-2">
             Настроить доступ…
           </Button>
         )}

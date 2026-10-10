@@ -23,7 +23,14 @@ export default defineConfig({
     },
   },
   clearScreen: false,
-  plugins: [react({ babel: { plugins: [["babel-plugin-react-compiler", { panicThreshold: "none", target: "19" }]] } }), tailwindcss()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [["babel-plugin-react-compiler", { panicThreshold: "none", target: "19" }]],
+      },
+    }),
+    tailwindcss(),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(import.meta.dirname, "src"),

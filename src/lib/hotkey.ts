@@ -24,16 +24,32 @@ function displayKey(key: string): string {
     Tab: "Tab",
   };
 
-  if (names[key] !== undefined) {return names[key];}
-  if (/^Key[A-Z]$/u.test(key)) {return key.slice("Key".length);}
-  if (/^Digit[0-9]$/u.test(key)) {return key.slice("Digit".length);}
-  if (key.length === SINGLE_KEY_LENGTH) {return key.toUpperCase();}
+  if (names[key] !== undefined) {
+    return names[key];
+  }
+  if (/^Key[A-Z]$/u.test(key)) {
+    return key.slice("Key".length);
+  }
+  if (/^Digit[0-9]$/u.test(key)) {
+    return key.slice("Digit".length);
+  }
+  if (key.length === SINGLE_KEY_LENGTH) {
+    return key.toUpperCase();
+  }
   return key;
 }
 
-function hotkeyCode(event: Readonly<Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">>): string | null {
-  if (/^(?:Key[A-Z]|Digit[0-9])$/u.test(event.code)) {return event.code;}
-  if (event.code !== "" && event.code !== "Unidentified") {return event.code;}
+function hotkeyCode(
+  event: Readonly<
+    Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">
+  >,
+): string | null {
+  if (/^(?:Key[A-Z]|Digit[0-9])$/u.test(event.code)) {
+    return event.code;
+  }
+  if (event.code !== "" && event.code !== "Unidentified") {
+    return event.code;
+  }
   return null;
 }
 
@@ -70,19 +86,35 @@ function isSupportedHotkeyCode(code: string): boolean {
   );
 }
 
-function formatHotkey(event: Readonly<Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">>): string | null {
-  if (modifierKeys[event.key] !== undefined) {return null;}
+function formatHotkey(
+  event: Readonly<
+    Pick<KeyboardEvent, "code" | "key" | "ctrlKey" | "altKey" | "shiftKey" | "metaKey">
+  >,
+): string | null {
+  if (modifierKeys[event.key] !== undefined) {
+    return null;
+  }
   const key = hotkeyCode(event);
-  if (key === null || !isSupportedHotkeyCode(key)) {return null;}
+  if (key === null || !isSupportedHotkeyCode(key)) {
+    return null;
+  }
 
   const modifiers = modifierOrder.filter((modifier) => {
-    if (modifier === "Ctrl") {return event.ctrlKey;}
-    if (modifier === "Alt") {return event.altKey;}
-    if (modifier === "Shift") {return event.shiftKey;}
+    if (modifier === "Ctrl") {
+      return event.ctrlKey;
+    }
+    if (modifier === "Alt") {
+      return event.altKey;
+    }
+    if (modifier === "Shift") {
+      return event.shiftKey;
+    }
     return event.metaKey;
   });
 
-  if (modifiers.length === EMPTY_LENGTH) {return null;}
+  if (modifiers.length === EMPTY_LENGTH) {
+    return null;
+  }
   return [...modifiers, key].join("+");
 }
 
@@ -96,8 +128,10 @@ function hotkeyParts(value: string): string[] {
 
 function displayPart(part: string): string {
   if (part === "Meta" || part === "Super") {
-    if (navigator.platform.includes("Mac")) { return "⌘"; }
-return "Super";
+    if (navigator.platform.includes("Mac")) {
+      return "⌘";
+    }
+    return "Super";
   }
   return displayKey(part);
 }
